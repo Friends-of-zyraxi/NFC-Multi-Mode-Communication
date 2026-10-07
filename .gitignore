@@ -19,3 +19,12 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# 本机 Gradle 用户目录（构建缓存，与机器相关且体积大）
+/.gradle-home
+# 发布产物与 R8 映射文件：体积大、每次构建都不同，不入版本库
+/app/release/*.apk
+/app/release/*.txt
+# AGP 构建元数据与 Baseline Profile：每次构建都会重写
+output-metadata.json
+/app/release/baselineProfiles/
