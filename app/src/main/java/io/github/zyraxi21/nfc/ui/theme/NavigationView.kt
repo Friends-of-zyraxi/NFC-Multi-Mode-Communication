@@ -184,13 +184,6 @@ private fun AppTopBar(gutter: Dp) {
                 modifier = Modifier.semantics { heading() }
             )
             Spacer(modifier = Modifier.height(FluentSpacing.xxs))
-            FluentText(
-                text = stringResource(R.string.version_label),
-                style = FluentTextStyle.Caption1,
-                color = titleColor.copy(alpha = 0.8f),
-                centered = true,
-                maxLines = 1
-            )
         }
     }
 }
