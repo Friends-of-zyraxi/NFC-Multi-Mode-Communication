@@ -1,3 +1,6 @@
+import java.io.File
+import org.gradle.api.tasks.Copy
+
 plugins {
     alias(libs.plugins.android.application)
     // AGP 9.0 起内置 Kotlin 支持，无需再应用 org.jetbrains.kotlin.android
@@ -24,7 +27,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8：代码压缩、混淆与优化（AGP 内置 R8，此开关即官方启用方式）
+            isMinifyEnabled = true
+            // 资源压缩：移除未被引用的资源，依赖上面的 isMinifyEnabled 生效
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -40,9 +46,27 @@ android {
         // 界面全部由 Compose 实现，工程内没有 res/layout，无需 viewBinding
         compose = true
     }
+    // 语言资源裁剪：应用界面只有中文，且中文在 res/values/strings.xml（默认资源）里，
+    // 不受影响；这里裁掉的是库自带的 137 种语言翻译。AGP 9 已用 localeFilters 取代 resConfigs。
+    // 注意必须写完整的 BCP 47 配置串：写 "zh" 匹配不到 values-zh-rCN，会连中文一起删掉。
+    // 下列变体来自当前依赖，依赖升级后若出现新变体需要在此追加。
+    androidResources {
+        localeFilters += listOf(
+            "zh-rCN", "zh-rHK", "zh-rTW",
+            "en-rAU", "en-rCA", "en-rGB", "en-rIN", "en-rXC"
+        )
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // AGP / AndroidX 的版本标记，只有构建工具会读
+            excludes += "/META-INF/*.version"
+            // kotlinx-coroutines 的调试探针，release 包不需要
+            excludes += "/DebugProbesKt.bin"
+            // Kotlin 反射元数据：本应用不含 kotlin-reflect（APK 的 dex 中没有 kotlin/reflect 类），
+            // 这 8 个 *.kotlin_builtins 无人读取，全部排除（约 53 KB）。
+            // 将来若引入 kotlin-reflect，需删掉这一行。
+            excludes += "**/*.kotlin_builtins"
         }
     }
 }
@@ -100,4 +124,42 @@ dependencies {
     implementation("com.microsoft.fluentui:fluentui_notification:0.3.10")
     implementation("com.microsoft.fluentui:fluentui_menus:0.3.5")
     implementation("com.microsoft.fluentui:fluentui_listitem:0.3.7")
+}
+
+// ======================================================================
+// R8 映射文件归档
+//
+// mapping.txt 是唯一能把线上混淆堆栈还原成源码行号的文件，且无法事后重建。
+// 每次 assembleRelease 结束后，把它和 usage.txt 复制到 app/release/ 目录，
+// 文件名带 versionName-versionCode，避免多版本之间配错。
+//
+// 默认目标：app/release/（与发布用 APK 同级，且不会被 clean 删除）
+// 不能写进 app/build/outputs/apk/release/：那是 AGP 自己的输出目录，Gradle 会判定
+// 目录所有权冲突并让构建失败，而且 clean 会连 mapping 一起删掉。
+// 长期存档建议覆盖到仓库外（30 MB 的映射文件不适合进版本库）：
+//   .\gradlew :app:assembleRelease -PmappingArchiveDir=D:\archive\nfc
+// ======================================================================
+val r8ReportDir = layout.buildDirectory.dir("outputs/mapping/release")
+val releaseVersionTag = "${android.defaultConfig.versionName}-${android.defaultConfig.versionCode}"
+
+val archiveR8Mapping = tasks.register<Copy>("archiveR8Mapping") {
+    group = "build"
+    description = "把 R8 的 mapping.txt / usage.txt 复制到 app/release 目录"
+
+    val mappingFile = r8ReportDir.map { it.file("mapping.txt") }
+    val usageFile = r8ReportDir.map { it.file("usage.txt") }
+    val archiveDir = providers.gradleProperty("mappingArchiveDir")
+        .map { File(it) }
+        .orElse(layout.projectDirectory.dir("release").asFile)
+
+    from(mappingFile) { rename { "mapping-$releaseVersionTag.txt" } }
+    from(usageFile) { rename { "usage-$releaseVersionTag.txt" } }
+    into(archiveDir)
+
+    // 未开启 R8 时不产生报告，任务直接跳过
+    onlyIf { mappingFile.get().asFile.exists() }
+}
+
+tasks.matching { it.name == "assembleRelease" || it.name == "packageRelease" }.configureEach {
+    finalizedBy(archiveR8Mapping)
 }

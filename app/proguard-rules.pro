@@ -12,10 +12,13 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# 保留行号信息：R8 压缩后仍可在崩溃堆栈中定位到源码行
+-keepattributes SourceFile,LineNumberTable
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# 隐藏原始源文件名，避免暴露包结构
+-renamesourcefileattribute SourceFile
+
+# Fluent UI 编译期使用了 @Parcelize（kotlin-parcelize），该注解在运行时不存在，
+# 仅保留在库的类文件中，无需告警。以下两条对应 R8 生成的 missing_rules.txt。
+-dontwarn kotlinx.android.parcel.Parcelize
+-dontwarn kotlinx.parcelize.Parcelize

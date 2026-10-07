@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  资源压缩白名单。
+
+  values-night/themes.xml 里的 BaseTheme_MyApplication 夜间变体，在开启 isShrinkResources
+  后会被资源压缩器判定为不可达并删除：Theme.MyApplication 在浅色与深色下的定义完全相同，
+  资源优化器合并该样式后丢掉了夜间配置对 BaseTheme_MyApplication 的引用。
+  后果是深色模式冷启动首帧仍使用 windowLightStatusBar=true（深色图标），
+  压在 #141414 的窗口背景上不可见。这里显式保留该样式的全部配置变体。
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@style/BaseTheme_MyApplication,@style/Theme.MyApplication" />
