@@ -152,6 +152,12 @@
 
 ---
 
+## 更新日志
+
+各版本的功能变更与修复记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+---
+
 ## 许可证
 
 本项目以 **GNU General Public License v3.0**（GPL-3.0）发布，完整条款见根目录的 [LICENSE](LICENSE)。
