@@ -10,8 +10,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -265,8 +265,10 @@ private fun AppBottomBar(
  * 撑出手势条区域——这段与 TabItem 的**背景色相同**，因此视觉上背景是连通的，
  * 不会出现"图标区一块、下面手势条一块"的割裂感。
  *
- * 涟漪必须显式传 `rememberRipple()`：`Modifier.clickable` 不传 `indication` 时取
+ * 涟漪必须显式传 `ripple()`：`Modifier.clickable` 不传 `indication` 时取
  * `LocalIndication.current`，而本工程的主题栈并不提供它，漏掉就会"能点但没有反馈"。
+ * （用 Material3 的 `ripple()`，而非 M2 已废弃的 `rememberRipple()`；它非
+ * `@Composable`，无需 `remember`。）
  */
 @Composable
 private fun BottomTab(
@@ -280,7 +282,7 @@ private fun BottomTab(
     val rippleColor = AppTheme.ripple
     Column(
         modifier = modifier.clickable(
-            indication = rememberRipple(color = rippleColor),
+            indication = ripple(color = rippleColor),
             interactionSource = remember { MutableInteractionSource() },
             onClick = onClick
         ),

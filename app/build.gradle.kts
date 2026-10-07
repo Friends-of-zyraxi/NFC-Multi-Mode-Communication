@@ -7,7 +7,9 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-@Suppress("DEPRECATION")
+// UnstableApiUsage：AGP 9 的 androidResources.localeFilters 仍是 @Incubating API，
+// 但它是 resConfigs 的唯一替代品，只能抑制告警。
+@Suppress("DEPRECATION", "UnstableApiUsage")
 android {
     namespace = "io.github.zyraxi21.nfc"
     compileSdk = 37
@@ -33,7 +35,7 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }
@@ -53,7 +55,7 @@ android {
     androidResources {
         localeFilters += listOf(
             "zh-rCN", "zh-rHK", "zh-rTW",
-            "en-rAU", "en-rCA", "en-rGB", "en-rIN", "en-rXC"
+            "en-rAU", "en-rCA", "en-rGB", "en-rIN", "en-rXC",
         )
     }
     packaging {
@@ -72,34 +74,35 @@ android {
 }
 
 dependencies {
-    // Compose BOM：统一约束 Compose 各模块版本。主源集与测试源集必须各自声明，
-    // 这里复用同一个 platform 实例，避免重复书写同一坐标。
-    val composeBom = platform(libs.androidx.compose.bom)
+    // Compose BOM：统一约束 Compose 各模块版本，各模块不要再单独声明版本号。
+    //
+    // 这个 BOM 版本不能回退：NavigationView.kt 用的是已稳定的 HorizontalPager
+    // 与 beyondViewportPageCount，它们需要 Compose Foundation ≥ 1.7，而旧 BOM
+    // 只能给到 1.6.5。此前之所以能编译，是因为 navigation-compose 与
+    // constraintlayout-compose 顺带把 foundation/ui 顶到了 1.7.8（隐式升级）；
+    // 把这两个无关依赖删掉后就暴露了真实缺口，所以在这里显式对齐到 1.7.8。
+    // 该 BOM 同时提供 foundation/ui 1.7.8、material 1.7.8、material3 1.3.1。
 
-    // AndroidX 基础
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.appcompat)
+    // Material Components：values/themes.xml 的窗口主题继承
+    // Theme.MaterialComponents.DayNight.NoActionBar，必须有这份依赖。
+    // 它自己以 api 方式带进 appcompat 与 core-ktx，所以二者无需单独声明。
     implementation(libs.material)
-    implementation(libs.androidx.constraintlayout)
-    implementation(libs.androidx.lifecycle.livedata.ktx)
-    implementation(libs.androidx.lifecycle.viewmodel.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.navigation.fragment.ktx)
-    implementation(libs.androidx.navigation.ui.ktx)
-    implementation(libs.androidx.navigation.compose)
 
-    // Compose：版本统一由 BOM 约束，各模块不要再单独声明版本
-    implementation(composeBom)
+    // Compose：各模块版本统一由上面的 BOM 约束
+    // 注意：androidTest 配置并不继承这里的 platform 约束，测试源集必须再声明一次；
+    // 这是 Gradle 官方推荐写法，但 IDE 的 AvoidDuplicateDependencies 检查会误报，
+    // 实测删掉下面 androidTest 那行会直接构建失败，所以只抑制告警、不改代码。
+    @Suppress("AvoidDuplicateDependencies")
+    implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    // Fluent 内部依赖 material（Material 2 Compose）的 rememberRipple
-    implementation("androidx.compose.material:material")
-    // FluentTheme 用 observeAsState 观察 LiveData，需要此适配器
-    implementation("androidx.compose.runtime:runtime-livedata")
-    implementation(libs.androidx.constraintlayout.compose)
+    // Material 2 Compose：NavigationView 的 Icons.Default.* 来自它带入的
+    // material-icons-core。涟漪已改用 Material3 的 ripple()，不再需要 M2 的
+    // rememberRipple（那个 API 在 1.7 起已废弃）。
+    implementation(libs.androidx.compose.material)
 
     // Nearby Connections
     implementation(libs.play.services.nearby)
@@ -110,20 +113,23 @@ dependencies {
 
     // 测试
     testImplementation(libs.junit)
-    androidTestImplementation(composeBom)
+    // androidTest 配置不继承主源集的 platform 约束，必须重复声明一次（已实测：
+    // 删掉这行会报 "Could not find androidx.compose.ui:ui-test-junit4:."）。
+    @Suppress("AvoidDuplicateDependencies")
+    androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.ui.test.junit4)
 
     // Fluent Design：按需引入模块化依赖
-    implementation("com.microsoft.fluentui:fluentui_core:0.3.11")
-    implementation("com.microsoft.fluentui:fluentui_controls:0.3.3")
-    implementation("com.microsoft.fluentui:fluentui_progress:0.3.7")
-    implementation("com.microsoft.fluentui:fluentui_topappbars:0.3.9")
-    implementation("com.microsoft.fluentui:fluentui_tablayout:0.3.5")
-    implementation("com.microsoft.fluentui:fluentui_notification:0.3.10")
-    implementation("com.microsoft.fluentui:fluentui_menus:0.3.5")
-    implementation("com.microsoft.fluentui:fluentui_listitem:0.3.7")
+    implementation(libs.fluentui.core)
+    implementation(libs.fluentui.controls)
+    implementation(libs.fluentui.progress)
+    implementation(libs.fluentui.topappbars)
+    implementation(libs.fluentui.tablayout)
+    implementation(libs.fluentui.notification)
+    implementation(libs.fluentui.menus)
+    implementation(libs.fluentui.listitem)
 }
 
 // ======================================================================
@@ -160,6 +166,9 @@ val archiveR8Mapping = tasks.register<Copy>("archiveR8Mapping") {
     onlyIf { mappingFile.get().asFile.exists() }
 }
 
-tasks.matching { it.name == "assembleRelease" || it.name == "packageRelease" }.configureEach {
+// assembleRelease 与 packageRelease 都会产出 R8 报告，两者谁先跑完都触发归档；
+// finalizedBy 是幂等的，即使两个任务都执行也只会复制一次。
+val r8ReportTasks = setOf("assembleRelease", "packageRelease")
+tasks.matching { it.name in r8ReportTasks }.configureEach {
     finalizedBy(archiveR8Mapping)
 }

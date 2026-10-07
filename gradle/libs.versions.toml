@@ -1,39 +1,29 @@
 [versions]
 agp = "9.4.1"
-constraintlayoutCompose = "1.1.1"
 kotlin = "2.4.10"
-coreKtx = "1.10.1"
 junit = "4.13.2"
 junitVersion = "1.1.5"
 espressoCore = "3.5.1"
-appcompat = "1.6.1"
 material = "1.10.0"
-constraintlayout = "2.1.4"
-lifecycleLivedataKtx = "2.6.1"
-lifecycleViewmodelKtx = "2.6.1"
-navigationCompose = "2.9.4"
-navigationFragmentKtx = "2.6.0"
-navigationUiKtx = "2.6.0"
-lifecycleRuntimeKtx = "2.6.1"
 activityCompose = "1.8.0"
-composeBom = "2024.04.01"
+# 必须 ≥ 2025.02.00：NavigationView.kt 的 HorizontalPager / beyondViewportPageCount
+# 需要 Compose Foundation 1.7.x。此版本提供 foundation/ui 1.7.8。
+composeBom = "2025.02.00"
 playServicesNearby = "19.5.0"
+fluentuiCore = "0.3.11"
+fluentuiControls = "0.3.3"
+fluentuiProgress = "0.3.7"
+fluentuiTopappbars = "0.3.9"
+fluentuiTablayout = "0.3.5"
+fluentuiNotification = "0.3.10"
+fluentuiMenus = "0.3.5"
+fluentuiListitem = "0.3.7"
 
 [libraries]
-androidx-constraintlayout-compose = { module = "androidx.constraintlayout:constraintlayout-compose", version.ref = "constraintlayoutCompose" }
-androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
-androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
-androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
-androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
-androidx-lifecycle-livedata-ktx = { group = "androidx.lifecycle", name = "lifecycle-livedata-ktx", version.ref = "lifecycleLivedataKtx" }
-androidx-lifecycle-viewmodel-ktx = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycleViewmodelKtx" }
-androidx-navigation-fragment-ktx = { group = "androidx.navigation", name = "navigation-fragment-ktx", version.ref = "navigationFragmentKtx" }
-androidx-navigation-ui-ktx = { group = "androidx.navigation", name = "navigation-ui-ktx", version.ref = "navigationUiKtx" }
-androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-ui = { group = "androidx.compose.ui", name = "ui" }
@@ -43,7 +33,16 @@ androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-material = { group = "androidx.compose.material", name = "material" }
 play-services-nearby = { module = "com.google.android.gms:play-services-nearby", version.ref = "playServicesNearby" }
+fluentui-core = { module = "com.microsoft.fluentui:fluentui_core", version.ref = "fluentuiCore" }
+fluentui-controls = { module = "com.microsoft.fluentui:fluentui_controls", version.ref = "fluentuiControls" }
+fluentui-progress = { module = "com.microsoft.fluentui:fluentui_progress", version.ref = "fluentuiProgress" }
+fluentui-topappbars = { module = "com.microsoft.fluentui:fluentui_topappbars", version.ref = "fluentuiTopappbars" }
+fluentui-tablayout = { module = "com.microsoft.fluentui:fluentui_tablayout", version.ref = "fluentuiTablayout" }
+fluentui-notification = { module = "com.microsoft.fluentui:fluentui_notification", version.ref = "fluentuiNotification" }
+fluentui-menus = { module = "com.microsoft.fluentui:fluentui_menus", version.ref = "fluentuiMenus" }
+fluentui-listitem = { module = "com.microsoft.fluentui:fluentui_listitem", version.ref = "fluentuiListitem" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

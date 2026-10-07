@@ -28,8 +28,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.Surface
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -412,7 +412,7 @@ fun FluentDropdownItem(text: String, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(
-                indication = rememberRipple(color = rippleColor),
+                indication = ripple(color = rippleColor),
                 interactionSource = remember { MutableInteractionSource() },
                 onClick = onClick
             )
@@ -770,11 +770,15 @@ object AppTheme {
      * 与 Fluent `TabItemTokens.rippleColor` 的做法完全一致
      * （那里就是 `FluentColor(light = Black, dark = White)`）。
      *
-     * **自实现的可点击控件必须显式把它传给 `clickable(indication = rememberRipple(...))`。**
+     * **自实现的可点击控件必须显式把它传给 `clickable(indication = ripple(...))`。**
      * 不传时 `Modifier.clickable` 会取 `LocalIndication.current`，而本工程的主题栈
      * （`FluentTheme` + 一个 Material3 的 `CompositionLocalProvider`）并不会把涟漪
      * 装进这个 CompositionLocal，结果就是"能点但没有任何点击反馈"——
-     * Fluent 的组件之所以没这个问题，是因为它们全部显式传了 `rememberRipple()`。
+     * Fluent 的组件之所以没这个问题，是因为它们全部显式传了涟漪。
+     *
+     * 此处用 Material3 的 `ripple()` 而非 M2 已废弃的 `rememberRipple()`：后者返回
+     * 旧的 `Indication` 实现，与 Compose 1.7 的新 Indication API 不兼容。`ripple()`
+     * 不是 `@Composable` 函数，不需要 `remember`，直接内联调用即可。
      */
     val ripple: Color
         @Composable
