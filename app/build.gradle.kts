@@ -98,6 +98,8 @@ dependencies {
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
+    // FluentTheme 使用 observeAsState，需将 LiveData 适配库打包进 APK，版本由 Compose BOM 统一约束。
+    implementation(libs.androidx.runtime.livedata)
     implementation(libs.androidx.material3)
     // Material 2 Compose：NavigationView 的 Icons.Default.* 来自它带入的
     // material-icons-core。涟漪已改用 Material3 的 ripple()，不再需要 M2 的
