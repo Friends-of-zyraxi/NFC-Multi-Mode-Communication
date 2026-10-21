@@ -5,7 +5,20 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号采用日期式命名 `YYYY.MM.DD.构建号`，与 Git 标签 `v<版本号>` 一一对应。
 
-## [Unreleased]
+## [未发布]
+
+### 新增
+
+- 自适应图标新增 monochrome 层（`drawable/ic_launcher_monochrome.xml`），支持 Android 13 及以上的主题图标，几何参数与前景层保持一致
+
+### 变更
+
+- 应用图标改用自适应图标（adaptive icon）：背景层 `ic_launcher_background.xml` 铺满渐变，前景层 `ic_launcher_foreground.xml` 只保留白色 NFC 图形；`android:icon` / `android:roundIcon` 由 `@drawable/nfc_logo`、`@drawable/nfc_logo_round` 改指 `@mipmap/ic_launcher`、`@mipmap/ic_launcher_round`
+- 前景图形按源文件 `NFC.svg` 的 18% 留白比例缩放至外沿 46dp，在 72dp 可见区内保留同等边距，圆形、圆角方形等遮罩均不会切到笔画
+
+### 修复
+
+- 修复桌面图标显示为圆形底衬内嵌方形图、四周露出白底的问题：此前 `android:icon` 指向普通矢量图，系统只能按 legacy 图标处理，由启动器自行补加形状底衬
 
 ## [2026.10.07.1] - 2026-10-07
 
