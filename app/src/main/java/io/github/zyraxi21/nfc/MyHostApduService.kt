@@ -64,7 +64,7 @@ class MyHostApduService : HostApduService() {
         var emulatedData: ByteArray? = null
             private set
 
-        /** 模拟数据的业务类型（TEXT / URL / WIFI / BLUETOOTH） */
+        /** 模拟数据的业务类型（TEXT / URL / WIFI / BLUETOOTH / APPLICATION） */
         @Volatile
         var emulatedDataType: String? = null
             private set

@@ -82,6 +82,7 @@
     <string name="data_type_url">网址</string>
     <string name="data_type_wifi">Wi-Fi</string>
     <string name="data_type_bluetooth">蓝牙</string>
+    <string name="data_type_application">应用程序</string>
 
     <!-- 写卡 - 输入标签 -->
     <string name="label_text_content">输入文本内容</string>
@@ -92,11 +93,19 @@
     <string name="label_auth_type">认证类型</string>
     <string name="label_bt_mac">蓝牙 MAC 地址</string>
     <string name="label_bt_name">设备名称（可选）</string>
+    <string name="label_application_package">应用包名</string>
+    <string name="button_select_application">从本机应用中选择</string>
+    <string name="title_select_application">选择应用程序</string>
+    <string name="label_search_application">搜索应用名称或包名</string>
 
     <!-- 写卡 - 提示文本 -->
     <string name="hint_text_format">格式：直接输入文字内容</string>
     <string name="hint_url_format">格式：http:// 或 https:// 开头</string>
     <string name="hint_bt_format">写入蓝牙 OOB 配对数据</string>
+    <string name="hint_application_format">选择应用或手动填写包名。</string>
+    <string name="placeholder_application_package">com.example.app</string>
+    <string name="msg_no_applications">没有找到匹配的应用</string>
+    <string name="msg_application_list_failed">无法加载应用列表，请返回后手动填写包名</string>
 
     <!-- 写卡 - 占位符 -->
     <string name="placeholder_url_example">https://www.example.com</string>
@@ -109,6 +118,7 @@
     <string name="error_wifi_ssid_blank">请输入 Wi-Fi 名称</string>
     <string name="error_bt_mac_blank">请输入蓝牙 MAC 地址</string>
     <string name="error_content_blank">请输入内容</string>
+    <string name="error_application_package">请输入有效的应用包名，例如 com.example.app</string>
     <string name="status_tap_card">请将卡靠近设备背面…</string>
     <string name="status_writing">正在写入…</string>
     <string name="status_write_success">写入成功</string>
@@ -159,7 +169,7 @@
     <!-- HCE 服务                                                             -->
     <!-- ================================================================== -->
     <string name="hce_service_desc">NFC 多模式通信 - 卡模拟服务</string>
-    <string name="hce_aid_desc">NFC 标签模拟（文本/网址/Wi-Fi/蓝牙）</string>
+    <string name="hce_aid_desc">NFC 标签模拟（文本/网址/Wi-Fi/蓝牙/应用程序）</string>
 
     <!-- ================================================================== -->
     <!-- P2P 端对端                                                           -->

@@ -44,6 +44,8 @@ import io.github.zyraxi21.nfc.ui.theme.WifiEncryption
 import io.github.zyraxi21.nfc.ui.theme.WriteCardScreen
 import io.github.zyraxi21.nfc.ui.theme.WriteDataType
 import io.github.zyraxi21.nfc.ui.theme.WriteState
+import io.github.zyraxi21.nfc.util.createApplicationNdefMessage
+import io.github.zyraxi21.nfc.util.isValidApplicationPackageName
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.*
 import kotlinx.coroutines.delay
@@ -74,7 +76,7 @@ class MainActivity : ComponentActivity() {
     private var isReaderButtonVisible by mutableStateOf(false)
 
     // 写卡 UI 状态 (来自 WriteCard.kt)
-    enum class WriteMode { IDLE, TEXT, URL, WIFI, BLUETOOTH }
+    enum class WriteMode { IDLE, TEXT, URL, WIFI, BLUETOOTH, APPLICATION }
     private var currentWriteMode by mutableStateOf(WriteMode.IDLE)
     private var inputText by mutableStateOf("")
 
@@ -91,6 +93,8 @@ class MainActivity : ComponentActivity() {
     // 蓝牙写入数据
     var btMac by mutableStateOf("")
     var btName by mutableStateOf("")
+
+    private var applicationPackageName by mutableStateOf("")
 
     private var snackbarHostState: SnackbarState? = null
 
@@ -341,7 +345,18 @@ class MainActivity : ComponentActivity() {
                                 writeState = WriteState.WAITING_FOR_CARD
                                 writeStatusMessage = getString(R.string.status_tap_card)
                             },
-                            onStartEmulation = { type, textInput, wifiSsid, wifiPassword, wifiEncryption, wifiAuth, btMac, btName ->
+                            onWriteApplication = { packageName ->
+                                if (!isValidApplicationPackageName(packageName)) {
+                                    writeStatusMessage = getString(R.string.error_application_package)
+                                    writeState = WriteState.FAILED
+                                    return@WriteCardScreen
+                                }
+                                currentWriteMode = WriteMode.APPLICATION
+                                applicationPackageName = packageName.trim()
+                                writeState = WriteState.WAITING_FOR_CARD
+                                writeStatusMessage = getString(R.string.status_tap_card)
+                            },
+                            onStartEmulation = { type, textInput, wifiSsid, wifiPassword, wifiEncryption, wifiAuth, btMac, btName, applicationPackageName ->
                                 // 验证输入
                                 when (type) {
                                     WriteDataType.TEXT, WriteDataType.URL -> {
@@ -372,6 +387,14 @@ class MainActivity : ComponentActivity() {
                                         this@MainActivity.btMac = btMac
                                         this@MainActivity.btName = btName
                                     }
+                                    WriteDataType.APPLICATION -> {
+                                        if (!isValidApplicationPackageName(applicationPackageName)) {
+                                            writeStatusMessage = getString(R.string.error_application_package)
+                                            writeState = WriteState.FAILED
+                                            return@WriteCardScreen
+                                        }
+                                        this@MainActivity.applicationPackageName = applicationPackageName.trim()
+                                    }
                                 }
                                 // 构建 NDEF 消息并存入 HCE 服务
                                 val ndefMessage = when (type) {
@@ -379,6 +402,7 @@ class MainActivity : ComponentActivity() {
                                     WriteDataType.URL -> createUriNdefMessage(textInput)
                                     WriteDataType.WIFI -> createWifiNdefMessage(wifiSsid, wifiPassword, wifiEncryption, wifiAuth)
                                     WriteDataType.BLUETOOTH -> createBluetoothNdefMessage(btMac, btName)
+                                    WriteDataType.APPLICATION -> createApplicationNdefMessage(applicationPackageName)
                                 }
                                 // 写入 HCE 服务并同步落盘：进程被回收后服务重启仍能恢复数据
                                 MyHostApduService.setEmulatedData(
@@ -468,11 +492,30 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        handleReadIntent(this.intent)
     }
 
     // =======================================================================
     // NFC 读卡（来自 ReadCard.kt）
     // =======================================================================
+
+    /** 前台分发或冷启动携带的 NDEF 也仅解析展示，不执行记录中的应用或 URI。 */
+    @Suppress("DEPRECATION") // 兼容仍通过 ACTION_TAG_DISCOVERED 分发标签的系统
+    private fun handleReadIntent(intent: Intent) {
+        if (intent.action !in listOf(
+                NfcAdapter.ACTION_NDEF_DISCOVERED,
+                NfcAdapter.ACTION_TECH_DISCOVERED,
+                NfcAdapter.ACTION_TAG_DISCOVERED
+            )) return
+        val messages = intent.getParcelableArrayExtra(
+            NfcAdapter.EXTRA_NDEF_MESSAGES, NdefMessage::class.java
+        )?.toList().orEmpty()
+        if (messages.isEmpty()) return
+        intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)?.let { tag ->
+            tagInfo = getString(R.string.format_tag_info, tag.toString())
+        }
+        tagContent = parseNdefMessages(messages)
+    }
 
     private fun checkNfcAvailability(
         showMessage: (Int, Int, (() -> Unit)?) -> Unit
@@ -705,6 +748,7 @@ class MainActivity : ComponentActivity() {
                 WriteMode.URL -> createUriNdefMessage(inputText)
                 WriteMode.WIFI -> createWifiNdefMessage(wifiSsid, wifiPassword, wifiEncryption, wifiAuth)
                 WriteMode.BLUETOOTH -> createBluetoothNdefMessage(btMac, btName)
+                WriteMode.APPLICATION -> createApplicationNdefMessage(applicationPackageName)
                 WriteMode.IDLE -> return
             }
 
@@ -1127,6 +1171,8 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         if (currentWriteMode != WriteMode.IDLE) {
             handleWriteIntent(intent)
+        } else {
+            handleReadIntent(intent)
         }
     }
 
@@ -1137,6 +1183,7 @@ class MainActivity : ComponentActivity() {
             handleWriteOnTag(tag)
             return@ReaderCallback
         }
+        // Reader Mode 接管标签，AAR 只交给解析器展示，避免系统按包名启动应用。
         // 读卡：优先用自定义 AID 直连。
         // 小米 HyperOS 会把 NFC Forum T4T AID(D2760000850101) 写死在 NFC 控制器的路由表里指向 SE，
         // 标准 NDEF 路径会被系统"碰一碰"抢占，只有自定义 AID 才会路由到本应用的 HCE 服务。
@@ -1179,6 +1226,7 @@ class MainActivity : ComponentActivity() {
                 WriteMode.URL -> createUriNdefMessage(inputText)
                 WriteMode.WIFI -> createWifiNdefMessage(wifiSsid, wifiPassword, wifiEncryption, wifiAuth)
                 WriteMode.BLUETOOTH -> createBluetoothNdefMessage(btMac, btName)
+                WriteMode.APPLICATION -> createApplicationNdefMessage(applicationPackageName)
                 WriteMode.IDLE -> return
             }
             writeState = WriteState.WRITING

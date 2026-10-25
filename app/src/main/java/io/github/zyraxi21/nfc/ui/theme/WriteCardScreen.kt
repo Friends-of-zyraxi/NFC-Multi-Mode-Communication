@@ -18,6 +18,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.microsoft.fluentui.theme.token.controlTokens.ButtonStyle
 import com.microsoft.fluentui.tokenized.progress.CircularProgressIndicator
 import io.github.zyraxi21.nfc.R
+import io.github.zyraxi21.nfc.util.isValidApplicationPackageName
 
 // =======================================================================
 // 写入状态：由 MainActivity 驱动，控制弹窗显示
@@ -38,7 +39,8 @@ enum class WriteDataType(val labelResId: Int) {
     TEXT(R.string.data_type_text),
     URL(R.string.data_type_url),
     WIFI(R.string.data_type_wifi),
-    BLUETOOTH(R.string.data_type_bluetooth)
+    BLUETOOTH(R.string.data_type_bluetooth),
+    APPLICATION(R.string.data_type_application)
 }
 
 /**
@@ -103,12 +105,14 @@ fun WriteCardScreen(
     onWriteUrl: (String) -> Unit,
     onWriteWifi: (ssid: String, password: String, encryption: WifiEncryption, auth: WifiAuth) -> Unit,
     onWriteBluetooth: (mac: String, name: String) -> Unit,
+    onWriteApplication: (packageName: String) -> Unit = {},
     onStartEmulation: (
         type: WriteDataType, textInput: String,
         wifiSsid: String, wifiPassword: String,
         wifiEncryption: WifiEncryption, wifiAuth: WifiAuth,
-        btMac: String, btName: String
-    ) -> Unit = { _, _, _, _, _, _, _, _ -> },
+        btMac: String, btName: String,
+        applicationPackageName: String
+    ) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
     onCancelWrite: () -> Unit = {}
 ) {
     val focusManager = LocalFocusManager.current
@@ -127,6 +131,13 @@ fun WriteCardScreen(
     var btMac by remember { mutableStateOf("") }
     var btName by remember { mutableStateOf("") }
 
+    // ----- 应用程序表单 -----
+    var applicationPackageName by remember { mutableStateOf("") }
+    var applicationPickerVisible by remember { mutableStateOf(false) }
+    val validApplicationPackage = isValidApplicationPackageName(applicationPackageName)
+    val canSubmit = writeState == WriteState.IDLE &&
+        (selectedType != WriteDataType.APPLICATION || validApplicationPackage)
+
     // 切换类型时清空输入
     LaunchedEffect(selectedType) {
         textInput = ""
@@ -134,6 +145,8 @@ fun WriteCardScreen(
         wifiPassword = ""
         btMac = ""
         btName = ""
+        applicationPackageName = ""
+        applicationPickerVisible = false
     }
 
     Box(
@@ -254,6 +267,36 @@ fun WriteCardScreen(
                         color = AppTheme.textHint
                     )
                 }
+
+                WriteDataType.APPLICATION -> {
+                    FluentButton(
+                        onClick = {
+                            focusManager.clearFocus()
+                            applicationPickerVisible = true
+                        },
+                        text = stringResource(R.string.button_select_application),
+                        style = ButtonStyle.OutlinedButton,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = PageMetrics.minTouchTarget)
+                    )
+                    FluentTextField(
+                        value = applicationPackageName,
+                        onValueChange = { applicationPackageName = it },
+                        label = stringResource(R.string.label_application_package),
+                        hintText = stringResource(R.string.placeholder_application_package)
+                    )
+                    if (applicationPackageName.isNotBlank() && !validApplicationPackage) {
+                        FluentText(
+                            text = stringResource(R.string.error_application_package),
+                            style = FluentTextStyle.Caption1,
+                            color = AppTheme.danger
+                        )
+                    }
+                    FluentText(
+                        text = stringResource(R.string.hint_application_format),
+                        style = FluentTextStyle.Caption1,
+                        color = AppTheme.textHint
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(FluentSpacing.s))
@@ -277,10 +320,11 @@ fun WriteCardScreen(
                                 val (mac, name) = FormDefaults.resolveBluetooth(btMac, btName)
                                 onWriteBluetooth(mac, name)
                             }
+                            WriteDataType.APPLICATION -> onWriteApplication(applicationPackageName.trim())
                         }
                     },
                     text = stringResource(R.string.button_write_tag),
-                    enabled = writeState == WriteState.IDLE,
+                    enabled = canSubmit,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = PageMetrics.minTouchTarget)
@@ -297,11 +341,12 @@ fun WriteCardScreen(
                         onStartEmulation(
                             selectedType, resolvedText,
                             resolvedSsid, resolvedPass, wifiEncryption, wifiAuth,
-                            resolvedMac, resolvedName
+                            resolvedMac, resolvedName,
+                            applicationPackageName.trim()
                         )
                     },
                     text = stringResource(R.string.button_card_emulation),
-                    enabled = writeState == WriteState.IDLE,
+                    enabled = canSubmit,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = PageMetrics.minTouchTarget)
@@ -309,6 +354,16 @@ fun WriteCardScreen(
             }
 
             Spacer(modifier = Modifier.height(FluentSpacing.s))
+        }
+
+        if (applicationPickerVisible) {
+            ApplicationPickerDialog(
+                onApplicationSelected = {
+                    applicationPackageName = it.packageName
+                    applicationPickerVisible = false
+                },
+                onDismissRequest = { applicationPickerVisible = false }
+            )
         }
 
         // ================================================================

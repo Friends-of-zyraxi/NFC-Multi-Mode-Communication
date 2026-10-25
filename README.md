@@ -5,7 +5,7 @@
 本项目围绕 NFC 的 NDEF 数据交换展开，实现三种通信模式：
 
 - **读卡**：通过 Reader Mode 读取 NFC 标签中的 NDEF 数据并解析展示
-- **写卡 / 卡模拟**：向标签写入文本 / 网址 / Wi-Fi / 蓝牙配置，或通过 HCE 将手机模拟成 NFC 标签供读卡器读取
+- **写卡 / 卡模拟**：向标签写入文本 / 网址 / Wi-Fi / 蓝牙配置 / 应用程序记录，或通过 HCE 将手机模拟成 NFC 标签供读卡器读取
 - **端对端**：基于 Google Nearby Connections 实现两台设备之间的点对点消息传输
 
 ---
@@ -25,7 +25,9 @@
 
 ### 2. 写卡 / 卡模拟
 
-- 写卡支持 4 种数据类型：**文本、网址、Wi-Fi**（SSID / 密码 / 加密 / 认证可选）、**蓝牙**（MAC / 名称）
+- 写卡和卡模拟支持 5 种数据类型：**文本、网址、Wi-Fi**（SSID / 密码 / 加密 / 认证可选）、**蓝牙**（MAC / 名称）、**应用程序**（Android 包名）
+- 应用程序可从本机具有启动入口的应用列表中选择，支持按名称或包名搜索，也可手动填写包名（允许填写本机尚未安装的目标应用）
+- 应用程序使用标准 AAR（`android.com:pkg`）记录：退出本应用后扫描标签，由 Android 系统打开目标应用；在本应用读卡时只展示包名，不跳转
 - 自动适配标签类型：NDEF 标签直接写入；可格式化（NDEF Formatable）标签先格式化再写入
 - 完整的写入状态机弹窗：等待卡片 → 写入中 → 成功 / 失败
 - **卡模拟（HCE）**：模拟 NFC Forum Type 4 标签（NDEF Tag），另一台手机可用读卡功能直接读回
@@ -102,7 +104,7 @@
 | 网址 | Well Known `U`（RTD_URI） | 支持 0x00–0x23 完整前缀表 |
 | Wi-Fi | MIME `application/vnd.wfa.wsc` | WSC TLV 结构：SSID（0x1045）、Network Key（0x1027）、认证类型（0x1003）、加密类型（0x100F） |
 | 蓝牙 | MIME `application/vnd.bluetooth.ep.oob` | 2 字节头 + 倒序 6 字节 MAC + 可选设备名 |
-| 应用记录 | External `android.com:pkg` | AAR（Android Application Record） |
+| 应用程序 | External `android.com:pkg` | AAR（Android Application Record），支持写入、卡模拟及只读信息展示 |
 
 ---
 
@@ -147,6 +149,7 @@
 
 ## 已知限制与注意事项
 
+- 应用程序标签的启动行为遵循 [Android AAR 分发规则](https://developer.android.com/develop/connectivity/nfc/nfc#aar)：目标设备应已安装对应应用；未安装时系统可能转到应用商店，是否需要确认由扫描设备的系统决定。
 - **NFC P2P（Android Beam）自 Android 10 起被系统移除**，因此端对端功能改用 Google Nearby Connections（蓝牙 / Wi-Fi 直连）实现。
 - Nearby Connections 从 2026 年底起不再自动开启 Wi-Fi / 蓝牙；应用会在启动广播或发现前检查无线装置，并在关闭时引导用户手动开启。
 - 早期的独立 Activity 实现（`ReadCard.kt`、`WriteCard.kt`、`CardEmulationDeviceActivity`、`P2PCommunication.kt`）已全部清理，读写卡与卡模拟统一在 `MainActivity` + Compose 界面中完成。

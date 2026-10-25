@@ -49,6 +49,7 @@ fun P2PScreen(
     val focusManager = LocalFocusManager.current
 
     // 数据类型 & 输入 —— 仅在已连接后使用
+    val supportedTypes = remember { WriteDataType.entries.filter { it != WriteDataType.APPLICATION } }
     var selectedType by remember { mutableStateOf(WriteDataType.TEXT) }
     var textInput by remember { mutableStateOf("") }
     var wifiSsid by remember { mutableStateOf("") }
@@ -83,6 +84,7 @@ fun P2PScreen(
             val (mac, name) = FormDefaults.resolveBluetooth(btMac, btName)
             "BT:$mac|$name"
         }
+        WriteDataType.APPLICATION -> error("Application records are only supported by NFC writing and emulation")
     }
 
     Box(
@@ -250,9 +252,9 @@ fun P2PScreen(
                             text = stringResource(R.string.format_type_label, stringResource(selectedType.labelResId)),
                             expanded = typeExpanded,
                             onExpandedChange = { typeExpanded = it },
-                            options = WriteDataType.entries.map { stringResource(it.labelResId) },
+                            options = supportedTypes.map { stringResource(it.labelResId) },
                             onOptionSelected = { index ->
-                                selectedType = WriteDataType.entries[index]
+                                selectedType = supportedTypes[index]
                                 typeExpanded = false
                             }
                         )
@@ -327,6 +329,7 @@ fun P2PScreen(
                                     hintText = FormDefaults.BT_NAME
                                 )
                             }
+                            WriteDataType.APPLICATION -> Unit // 此类型不在 P2P 的选项中
                         }
 
                         // ---- 发送按钮（留空时自动用占位符默认值） ----
