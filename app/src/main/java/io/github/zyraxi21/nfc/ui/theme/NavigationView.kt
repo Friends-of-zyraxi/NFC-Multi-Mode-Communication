@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,48 +84,50 @@ fun BottomNavigationApp(
 
     // 页面外边距需要在 Scaffold 之外算出来，才能同时用于顶栏与页面内容，
     // 保证顶栏文字与页面文字共用同一条竖向基准线。
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val availableWidth = this.maxWidth
-        val gutter = PageMetrics.gutterFor(availableWidth)
-        Scaffold(
-            // 系统栏 insets 由顶栏/底栏各自消费，避免 Scaffold 再叠加一层留白
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            containerColor = AppTheme.canvas,
-            snackbarHost = { FluentSnackbarHost(snackbarHostState) },
-            topBar = { AppTopBar(gutter) },
-            bottomBar = {
-                AppBottomBar(
-                    tabs = navigationItems,
-                    selectedIndex = selectedItemIndex,
-                    onSelect = { index ->
-                        selectedItemIndex = index
-                        coroutineScope.launch { pagerState.animateScrollToPage(index) }
-                    }
-                )
-            }
-        ) { innerPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                // 超宽屏幕上限制正文列宽，避免行长过长影响可读性
-                val contentModifier = if (availableWidth > PageMetrics.maxContentWidth) {
-                    Modifier.width(PageMetrics.maxContentWidth).fillMaxHeight()
-                } else {
-                    Modifier.fillMaxSize()
+    AboutBottomSheet { openAbout ->
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val availableWidth = this.maxWidth
+            val gutter = PageMetrics.gutterFor(availableWidth)
+            Scaffold(
+                // 系统栏 insets 由顶栏/底栏各自消费，避免 Scaffold 再叠加一层留白
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                containerColor = AppTheme.canvas,
+                snackbarHost = { FluentSnackbarHost(snackbarHostState) },
+                topBar = { AppTopBar(gutter, onAboutClick = openAbout) },
+                bottomBar = {
+                    AppBottomBar(
+                        tabs = navigationItems,
+                        selectedIndex = selectedItemIndex,
+                        onSelect = { index ->
+                            selectedItemIndex = index
+                            coroutineScope.launch { pagerState.animateScrollToPage(index) }
+                        }
+                    )
                 }
-                ProvidePageGutter(gutter) {
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = contentModifier,
-                        beyondViewportPageCount = 1
-                    ) { page ->
-                        when (page) {
-                            0 -> readerScreen()
-                            1 -> writeScreen()
-                            2 -> p2pScreen()
+            ) { innerPadding ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    // 超宽屏幕上限制正文列宽，避免行长过长影响可读性
+                    val contentModifier = if (availableWidth > PageMetrics.maxContentWidth) {
+                        Modifier.width(PageMetrics.maxContentWidth).fillMaxHeight()
+                    } else {
+                        Modifier.fillMaxSize()
+                    }
+                    ProvidePageGutter(gutter) {
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = contentModifier,
+                            beyondViewportPageCount = 1
+                        ) { page ->
+                            when (page) {
+                                0 -> readerScreen()
+                                1 -> writeScreen()
+                                2 -> p2pScreen()
+                            }
                         }
                     }
                 }
@@ -134,7 +137,7 @@ fun BottomNavigationApp(
 }
 
 /**
- * 顶栏：应用标题 + 版本号，底色使用品牌色（对齐 Word 安卓版的标题栏观感）。
+ * 顶栏：点击应用标题打开关于底部面板，底色使用品牌色（对齐 Word 安卓版的标题栏观感）。
  *
  * 为什么浅色模式用品牌色、深色模式改用中性表面色——这不是偏好问题，而是对比度决定的：
  * 深色模式下 Fluent 的 `BrandBackground1` 取 `brandColor[Color100]`，那是一个**亮**蓝
@@ -143,14 +146,14 @@ fun BottomNavigationApp(
  * 浅色用品牌色、深色退回 `NeutralBackground3`。本工程的品牌色阶已按官方色阶的亮度分布
  * 生成，因此浅色模式的 `Color80` 与官方蓝同级，白字对比度约 5.4:1。
  *
- * 顶栏是唯一承载数据的表面，版本号刻意降到 0.8 透明度以形成次级层次。
  */
 @Composable
-private fun AppTopBar(gutter: Dp) {
+private fun AppTopBar(gutter: Dp, onAboutClick: () -> Unit) {
     val dark = isDarkMode()
     val background = if (dark) AppTheme.elevatedSurface else AppTheme.brandSurface
     val titleColor = if (dark) AppTheme.textPrimary else Color.White
     val dividerColor = if (dark) null else AppTheme.strokeSubtle
+    val aboutLabel = stringResource(R.string.about_title)
 
     Column(
         modifier = Modifier
@@ -171,6 +174,14 @@ private fun AppTopBar(gutter: Dp) {
             modifier = Modifier
                 .statusBarsPadding()
                 .fillMaxWidth()
+                .clickable(
+                    indication = ripple(color = titleColor),
+                    interactionSource = remember { MutableInteractionSource() },
+                    role = Role.Button,
+                    onClickLabel = aboutLabel,
+                    onClick = onAboutClick
+                )
+                .heightIn(min = PageMetrics.minTouchTarget)
                 .padding(horizontal = gutter, vertical = FluentSpacing.m),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

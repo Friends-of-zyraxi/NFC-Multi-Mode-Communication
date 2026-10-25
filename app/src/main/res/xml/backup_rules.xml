@@ -6,6 +6,9 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
+    <!-- 下载任务和安装包只在当前设备上有效。 -->
+    <exclude domain="sharedpref" path="app_updates.xml" />
+    <exclude domain="external" path="Download/updates/" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

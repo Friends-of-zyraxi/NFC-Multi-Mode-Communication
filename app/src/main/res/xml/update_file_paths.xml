@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 只向系统安装器临时开放更新安装包所在目录。 -->
+<paths>
+    <external-files-path name="updates" path="Download/updates/" />
+</paths>

@@ -105,6 +105,9 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     // FluentTheme 使用 observeAsState，需将 LiveData 适配库打包进 APK，版本由 Compose BOM 统一约束。
     implementation(libs.androidx.runtime.livedata)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.material3)
     // Material 2 Compose：NavigationView 的 Icons.Default.* 来自它带入的
     // material-icons-core。涟漪已改用 Material3 的 ripple()，不再需要 M2 的
@@ -120,6 +123,8 @@ dependencies {
 
     // 测试
     testImplementation(libs.junit)
+    testImplementation(libs.json)
+    testImplementation(libs.kotlinx.coroutines.test)
     // androidTest 配置不继承主源集的 platform 约束，必须重复声明一次（已实测：
     // 删掉这行会报 "Could not find androidx.compose.ui:ui-test-junit4:."）。
     @Suppress("AvoidDuplicateDependencies")
@@ -137,6 +142,7 @@ dependencies {
     implementation(libs.fluentui.notification)
     implementation(libs.fluentui.menus)
     implementation(libs.fluentui.listitem)
+    implementation(libs.fluentui.drawer)
 }
 
 // ======================================================================
