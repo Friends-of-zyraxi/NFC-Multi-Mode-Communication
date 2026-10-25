@@ -92,9 +92,6 @@ fun AboutBottomSheet(
             override fun backgroundBrush(bottomSheetInfo: BottomSheetInfo): Brush = SolidColor(AppTheme.surface)
 
             @Composable
-            override fun cornerRadius(bottomSheetInfo: BottomSheetInfo): Dp = FluentShapes.radius
-
-            @Composable
             override fun elevation(bottomSheetInfo: BottomSheetInfo): Dp = FluentElevation.sheet
         }
     }

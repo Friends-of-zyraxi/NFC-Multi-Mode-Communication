@@ -33,6 +33,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import com.microsoft.fluentui.tokenized.notification.NotificationResult
 import com.microsoft.fluentui.tokenized.notification.SnackbarState
+import com.microsoft.fluentui.theme.token.controlTokens.SnackbarStyle
 
 import io.github.zyraxi21.nfc.ui.theme.BottomNavigationApp
 import io.github.zyraxi21.nfc.ui.theme.ConnectionState
@@ -237,6 +238,7 @@ class MainActivity : ComponentActivity() {
                                 coroutineScope.launch {
                                     val result = snackbarHostState!!.showSnackbar(
                                         message = getString(messageRes),
+                                        style = SnackbarStyle.Accent,
                                         actionText = if (actionRes != 0) getString(actionRes) else null
                                     )
                                     if (result == NotificationResult.CLICKED) {
@@ -283,6 +285,7 @@ class MainActivity : ComponentActivity() {
                                     coroutineScope.launch {
                                         val result = snackbarHostState!!.showSnackbar(
                                             message = getString(messageRes),
+                                            style = SnackbarStyle.Accent,
                                             actionText = if (actionRes != 0) getString(actionRes) else null
                                         )
                                         if (result == NotificationResult.CLICKED) {
@@ -1332,7 +1335,7 @@ class MainActivity : ComponentActivity() {
     private fun showSnackbar(message: String) {
         val host = snackbarHostState ?: return
         kotlinx.coroutines.MainScope().launch {
-            host.showSnackbar(message)
+            host.showSnackbar(message, style = SnackbarStyle.Accent)
         }
     }
 

@@ -172,7 +172,6 @@ private fun AppTopBar(gutter: Dp, onAboutClick: () -> Unit) {
     ) {
         Column(
             modifier = Modifier
-                .statusBarsPadding()
                 .fillMaxWidth()
                 .clickable(
                     indication = ripple(color = titleColor),
@@ -181,6 +180,8 @@ private fun AppTopBar(gutter: Dp, onAboutClick: () -> Unit) {
                     onClickLabel = aboutLabel,
                     onClick = onAboutClick
                 )
+                // 水波纹先覆盖整个顶栏，再为标题内容留出状态栏高度。
+                .statusBarsPadding()
                 .heightIn(min = PageMetrics.minTouchTarget)
                 .padding(horizontal = gutter, vertical = FluentSpacing.m),
             horizontalAlignment = Alignment.CenterHorizontally
