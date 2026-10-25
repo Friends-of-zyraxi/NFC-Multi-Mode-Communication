@@ -11,17 +11,20 @@
 /.idea/compiler.xml
 /.idea/misc.xml
 /.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
 .DS_Store
 /build
 /.vscode
 /.claude
 /captures
+/.artifacts/
 .externalNativeBuild
 .cxx
 local.properties
 
 # 本机 Gradle 用户目录（构建缓存，与机器相关且体积大）
 /.gradle-home
+/.kotlin/
 # 发布产物与 R8 映射文件：体积大、每次构建都不同，不入版本库
 /app/release/*.apk
 /app/release/*.txt

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">NFC 方形图标</title>
+  <defs>
+    <linearGradient id="background-gradient" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF44CB"/>
+      <stop offset="1" stop-color="#FCC500"/>
+    </linearGradient>
+  </defs>
+  <rect id="background" width="1024" height="1024" fill="url(#background-gradient)"/>
+  <g id="nfc-mark" fill="none" stroke="#FFFFFF" stroke-width="72" stroke-linecap="round" stroke-linejoin="round">
+    <path id="frame" d="M320 220 H704 A100 100 0 0 1 804 320 V704 A100 100 0 0 1 704 804 H320 A100 100 0 0 1 220 704 V320 A100 100 0 0 1 320 220 Z"/>
+    <path id="left-stem" d="M512 804 H460 A96 96 0 0 1 364 708 V292 L548 476"/>
+    <path id="right-stem" d="M512 220 H564 A96 96 0 0 1 660 316 V732 L476 548"/>
+  </g>
+</svg>
