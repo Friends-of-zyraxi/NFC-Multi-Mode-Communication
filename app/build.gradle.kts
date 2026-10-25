@@ -28,6 +28,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 独立安装开发版，避免与使用发布签名的正式版冲突。
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             // R8：代码压缩、混淆与优化（AGP 内置 R8，此开关即官方启用方式）
             isMinifyEnabled = true

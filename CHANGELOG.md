@@ -9,6 +9,7 @@
 
 ### 新增
 
+- debug 构建使用独立包名 `io.github.zyraxi21.nfc.debug`，应用名称为“NFC 通信 开发版”，版本名追加 `-debug`，可与签名正式版同时安装
 - 自适应图标新增 monochrome 层（`drawable/ic_launcher_monochrome.xml`），支持 Android 13 及以上的主题图标，几何参数与前景层保持一致
 
 ### 变更
