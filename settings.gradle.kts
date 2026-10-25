@@ -33,6 +33,15 @@ dependencyResolutionManagement {
         maven { setUrl("https://maven.aliyun.com/repository/gradle-plugin") }
         maven { setUrl("https://maven.aliyun.com/repository/public") }
         maven { setUrl("https://jitpack.io") }
+        // Play services 固定从官方仓库获取，避免镜像中缺失的 AAR 被缓存后持续构建失败。
+        exclusiveContent {
+            forRepository {
+                google { name = "GooglePlayServices" }
+            }
+            filter {
+                includeGroup("com.google.android.gms")
+            }
+        }
         google()
         mavenCentral()
     }
