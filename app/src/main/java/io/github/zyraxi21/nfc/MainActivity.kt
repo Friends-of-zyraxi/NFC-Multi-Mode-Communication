@@ -815,7 +815,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isNdefCompatible(tag: Tag): Boolean {
-        return Ndef.get(tag) != null || NdefFormatable.get(tag) != null
+        return Ndef.get(tag) != null
     }
 
     private fun formatAndWrite(tag: Tag, message: NdefMessage) {
