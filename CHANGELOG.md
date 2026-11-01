@@ -7,6 +7,8 @@
 
 ## [未发布]
 
+## [2026.11.02.1] - 2026-11-02
+
 ### 新增
 
 - 读卡和端对端接收的记录增加手动操作按钮，支持访问网页、打开应用、系统确认添加 Wi-Fi 网络及按地址发起蓝牙配对；不受系统添加接口支持的 Wi-Fi 配置可复制密码并打开系统设置
@@ -19,11 +21,12 @@
 - 端对端通信与写卡、卡模拟统一为文本、网址、Wi-Fi、蓝牙、应用程序五种类型，共用多记录编辑、排序、应用选择及输入校验，直接传输标准 NDEF 二进制消息；接收后共用记录卡片、复制和原始数据展示，断开后仍可操作已接收内容
 - 扫描标签和接收消息时仅展示信息，外部操作由用户点击按钮触发；Nearby 传输完成后才提示发送成功，新旧端对端消息格式不互通，两端需升级到支持统一记录的版本
 - 底部导航图标统一为 Microsoft Fluent UI System Icons，读卡、写卡和端对端通信分别使用 Tag、Edit 和 Arrow Swap，未选中使用 Regular，选中使用 Filled
-- Wi-Fi 标签统一写入标准 WSC Configuration Token，蓝牙标签统一写入标准 BR/EDR OOB 数据，移除旧载荷格式的解析兼容；网址继续使用标准 URI 记录，交由扫描设备的系统处理打开、连接或配对确认，本应用读卡仅展示信息
-- Wi-Fi 表单支持开放、WPA-PSK 和 WPA2-PSK 网络，开放网络自动使用空密码；按协议校验 SSID、密钥和蓝牙设备名称，移除没有对应 WSC 值的 WPA3 选项，并提示多记录不按顺序执行操作
+- Wi-Fi 标签统一写入标准 WSC Configuration Token，蓝牙标签统一写入标准 BR/EDR OOB 数据，移除旧载荷格式的解析兼容；网址继续使用标准 URI 记录。支持这些记录的扫描设备可由系统处理打开、连接或配对确认，本应用内的外部操作需用户点击按钮
+- Wi-Fi 表单支持开放、WPA-PSK 和 WPA2-PSK 网络，开放网络自动使用空密码；按协议校验 SSID、密钥和蓝牙设备名称，移除没有对应 WSC 值的 WPA3 选项。多记录不会依次执行操作，系统如何分发由扫描设备决定
 - 开发版禁用整套应用内更新功能，关于面板仅提示手动安装；检查、下载恢复、下载和安装入口以及安装权限仅在正式版提供
 - 读卡结果按 NDEF 记录分卡片展示，文本、链接、应用包名与 Wi-Fi / 蓝牙字段分层排列，支持选择文字、单条复制和全部复制
 - 长内容可展开，标签 UID、通信技术、写入状态和原始载荷按需查看；扫描新标签时重置滚动及展开状态
+- Android Gradle Plugin 升级至 9.5.0
 
 ### 修复
 
@@ -102,6 +105,7 @@
 
 更完整的说明见 [README](README.md)。
 
-[未发布]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/compare/v2026.11.01.1...HEAD
+[未发布]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/compare/v2026.11.02.1...HEAD
+[2026.11.02.1]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/compare/v2026.11.01.1...v2026.11.02.1
 [2026.11.01.1]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/compare/v2026.10.07.1...v2026.11.01.1
 [2026.10.07.1]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/releases/tag/v2026.10.07.1
