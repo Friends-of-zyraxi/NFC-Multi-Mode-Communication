@@ -9,7 +9,7 @@
     <string name="about_description">读卡、写卡、卡模拟与端对端通信</string>
     <string name="about_version">版本 %1$s</string>
     <string name="about_version_unknown">未知</string>
-    <string name="about_maintainer">维护者：Friends-of-zyraxi</string>
+    <string name="about_maintainer">维护者：zyraxi、Richened</string>
     <string name="about_license">开源许可证：GNU GPL v3.0</string>
     <string name="about_repository">GitHub 项目</string>
     <string name="about_close">关闭</string>
