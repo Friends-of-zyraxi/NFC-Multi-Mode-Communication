@@ -20,10 +20,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.zyraxi21.nfc.R
+import io.github.zyraxi21.nfc.BuildConfig
 import io.github.zyraxi21.nfc.ui.theme.AboutBottomSheet
 import io.github.zyraxi21.nfc.ui.theme.FluentButton
 import io.github.zyraxi21.nfc.ui.theme.MyApplicationTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,6 +39,27 @@ class UpdateUiTest {
     val compose = createComposeRule()
     private val store = ViewModelStore()
     private val downloader = FakeDownloader()
+
+    @Test fun developmentBuildHidesAllUpdateActionsWithItsProductionFactory(): Unit = with(compose) {
+        assertFalse(BuildConfig.APP_UPDATES_ENABLED)
+        setContent {
+            MyApplicationTheme {
+                AboutBottomSheet { openAbout ->
+                    Column(Modifier.padding(32.dp)) { FluentButton(text = "打开关于", onClick = openAbout) }
+                }
+            }
+        }
+        onNodeWithText("打开关于").performClick()
+        val host = InstrumentationRegistry.getInstrumentation().targetContext
+        onNodeWithTag("about-sheet").assertIsDisplayed()
+        onNodeWithText(host.getString(R.string.update_disabled_debug)).assertIsDisplayed()
+        onNodeWithTag("update-section").assertDoesNotExist()
+        onNodeWithTag("update-dialog").assertDoesNotExist()
+        listOf(R.string.update_check, R.string.update_view_details, R.string.update_download_now,
+            R.string.update_cancel_download, R.string.update_install, R.string.update_view_downloads,
+            R.string.update_view_release).forEach { onNodeWithText(host.getString(it)).assertDoesNotExist() }
+        onNodeWithText(host.getString(R.string.about_repository)).assertIsDisplayed()
+    }
 
     @Test fun latestVersionFeedbackRemainsVisibleAboveTheSheet() = with(compose) {
         try {
@@ -84,7 +107,9 @@ class UpdateUiTest {
             val checker = object : UpdateChecker {
                 override suspend fun check(installedVersion: String, supportedAbis: List<String>) = result
             }
-            UpdateViewModel("2026.10.07.1", listOf("arm64-v8a"), checker, downloader, restoreDownloads = false)
+            // 显式启用正式版策略，继续在测试包中覆盖完整更新流程。
+            UpdateViewModel("2026.10.07.1", listOf("arm64-v8a"), checker, downloader,
+                restoreDownloads = false, updatesEnabled = true)
                 .also { store.put("update", it) }
         }
         setContent {

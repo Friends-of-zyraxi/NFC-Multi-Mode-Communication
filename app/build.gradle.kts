@@ -20,6 +20,7 @@ android {
         targetSdk = 37
         versionCode = 202611011
         versionName = "2026.11.01.1"
+        buildConfigField("boolean", "APP_UPDATES_ENABLED", "true")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -32,6 +33,8 @@ android {
             // 独立安装开发版，避免与使用发布签名的正式版冲突。
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            // 开发版通过手动安装更新，避免下载正式版的安装包。
+            buildConfigField("boolean", "APP_UPDATES_ENABLED", "false")
         }
         release {
             // R8：代码压缩、混淆与优化（AGP 内置 R8，此开关即官方启用方式）
@@ -52,6 +55,7 @@ android {
     buildFeatures {
         // 界面全部由 Compose 实现，工程内没有 res/layout，无需 viewBinding
         compose = true
+        buildConfig = true
     }
     // 语言资源裁剪：应用界面只有中文，且中文在 res/values/strings.xml（默认资源）里，
     // 不受影响；这里裁掉的是库自带的 137 种语言翻译。AGP 9 已用 localeFilters 取代 resConfigs。

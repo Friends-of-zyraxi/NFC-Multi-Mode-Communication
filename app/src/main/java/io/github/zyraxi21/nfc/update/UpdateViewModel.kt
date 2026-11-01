@@ -7,6 +7,7 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.zyraxi21.nfc.BuildConfig
 import io.github.zyraxi21.nfc.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -37,9 +38,10 @@ class UpdateViewModel(
     private val supportedAbis: List<String>,
     private val checker: UpdateChecker,
     private val downloader: UpdateDownloader,
-    restoreDownloads: Boolean = true
+    restoreDownloads: Boolean = true,
+    val updatesEnabled: Boolean = BuildConfig.APP_UPDATES_ENABLED,
 ) : ViewModel() {
-    private val _state = MutableStateFlow<UpdateUiState>(if (restoreDownloads) UpdateUiState.Restoring else UpdateUiState.Idle)
+    private val _state = MutableStateFlow<UpdateUiState>(if (updatesEnabled && restoreDownloads) UpdateUiState.Restoring else UpdateUiState.Idle)
     val state = _state.asStateFlow()
     private val _message = MutableStateFlow<UpdateMessage?>(null)
     val message = _message.asStateFlow()
@@ -48,10 +50,10 @@ class UpdateViewModel(
     private var downloadId: Long? = null
     private var downloadPoll: Job? = null
 
-    val canCheck: Boolean get() = installedVersion?.let { ReleaseVersion.parse(it) } != null
+    val canCheck: Boolean get() = updatesEnabled && installedVersion?.let { ReleaseVersion.parse(it) } != null
 
     init {
-        if (restoreDownloads) viewModelScope.launch {
+        if (updatesEnabled && restoreDownloads) viewModelScope.launch {
             val previousId = try {
                 downloader.restoreDownloadId(installedVersion)
             } catch (exception: CancellationException) {
@@ -69,6 +71,7 @@ class UpdateViewModel(
     }
 
     fun checkForUpdates() {
+        if (!updatesEnabled) return
         if (_state.value is UpdateUiState.Checking || _state.value is UpdateUiState.Downloading ||
             _state.value is UpdateUiState.Restoring || _state.value is UpdateUiState.ReadyToInstall
         ) return
@@ -108,13 +111,18 @@ class UpdateViewModel(
 
     /** 稍后下载；已完成的安装包保留在页面上，方便用户稍后再安装。 */
     fun dismissUpdate() {
+        if (!updatesEnabled) return
         _dialogVisible.value = false
         if (_state.value is UpdateUiState.Available) _state.value = UpdateUiState.Idle
     }
 
-    fun showUpdateDialog() { _dialogVisible.value = true }
+    fun showUpdateDialog() {
+        if (!updatesEnabled) return
+        _dialogVisible.value = true
+    }
 
     fun startDownload() {
+        if (!updatesEnabled) return
         val available = _state.value as? UpdateUiState.Available ?: return
         val asset = available.asset ?: return
         _message.value = null
@@ -165,6 +173,7 @@ class UpdateViewModel(
     }
 
     fun cancelDownload() {
+        if (!updatesEnabled) return
         if (_state.value !is UpdateUiState.Downloading) return
         val id = downloadId
         // 任务尚在入队时不能取消；入队完成前取消会产生无人观察的系统任务。
@@ -181,6 +190,7 @@ class UpdateViewModel(
     }
 
     fun installUpdate() {
+        if (!updatesEnabled) return
         val ready = _state.value as? UpdateUiState.ReadyToInstall ?: return
         when (downloader.install(ready.file)) {
             InstallOutcome.STARTED -> {

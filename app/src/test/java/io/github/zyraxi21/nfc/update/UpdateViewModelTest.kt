@@ -29,6 +29,33 @@ class UpdateViewModelTest {
     @Before fun setUp() { Dispatchers.setMain(StandardTestDispatcher()) }
     @After fun tearDown() { store.clear(); Dispatchers.resetMain() }
 
+    @Test fun disabledUpdatesNeverRestoreCheckDownloadOrInstall() = runUpdateTest {
+        downloader.restoredId = 42L
+        downloader.nextState = DownloadState.Completed(File("downloaded.apk"))
+        val vm = create(restore = true, enabled = false)
+        vm.checkForUpdates()
+        vm.showUpdateDialog()
+        vm.startDownload()
+        vm.cancelDownload()
+        vm.installUpdate()
+        vm.dismissUpdate()
+        runCurrent()
+        advanceTimeBy(5000)
+        runCurrent()
+        assertFalse(vm.updatesEnabled)
+        assertFalse(vm.canCheck)
+        assertEquals(UpdateUiState.Idle, vm.state.value)
+        assertFalse(vm.dialogVisible.value)
+        assertNull(vm.message.value)
+        assertEquals(0, checker.calls)
+        assertEquals(0, downloader.restores)
+        assertEquals(0, downloader.enqueues)
+        assertEquals(0, downloader.queries)
+        assertEquals(0, downloader.installCalls)
+        assertEquals(0, downloader.settingsCalls)
+        assertTrue(downloader.cancelled.isEmpty())
+    }
+
     @Test fun discoveringAnUpdateWaitsForUserConfirmation() = runUpdateTest {
         val vm = create()
         vm.checkForUpdates()
@@ -190,8 +217,8 @@ class UpdateViewModelTest {
         try { body() } finally { store.clear() }
     }
 
-    private fun create(restore: Boolean = false): UpdateViewModel = UpdateViewModel(
-        "2026.10.07.1", listOf("arm64-v8a"), checker, downloader, restore
+    private fun create(restore: Boolean = false, enabled: Boolean = true): UpdateViewModel = UpdateViewModel(
+        "2026.10.07.1", listOf("arm64-v8a"), checker, downloader, restore, updatesEnabled = enabled
     ).also { store.put("update", it) }
 
     private class FakeChecker(var result: UpdateCheckResult) : UpdateChecker {
@@ -206,6 +233,7 @@ class UpdateViewModelTest {
 
     private class FakeDownloader : UpdateDownloader {
         var enqueues = 0
+        var restores = 0
         var queries = 0
         var restoredId: Long? = null
         var nextState: DownloadState = DownloadState.Running(25)
@@ -215,7 +243,7 @@ class UpdateViewModelTest {
         var settingsAvailable = true
         var settingsCalls = 0
         override suspend fun enqueue(release: AppRelease, asset: ReleaseAsset): Long { enqueues++; return 42L }
-        override suspend fun restoreDownloadId(installedVersion: String?): Long? = restoredId
+        override suspend fun restoreDownloadId(installedVersion: String?): Long? { restores++; return restoredId }
         override suspend fun query(downloadId: Long): DownloadState { queries++; return nextState }
         override suspend fun cancel(downloadId: Long) { cancelled.add(downloadId) }
         override fun install(file: File): InstallOutcome { installCalls++; return installOutcome }

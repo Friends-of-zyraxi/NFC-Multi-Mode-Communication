@@ -139,7 +139,12 @@ fun AboutBottomSheet(
                         FluentText(stringResource(R.string.about_maintainer), FluentTextStyle.Caption1, color = AppTheme.textSecondary)
                         FluentText(stringResource(R.string.about_license), FluentTextStyle.Caption1, color = AppTheme.textSecondary)
                     }
-                    UpdateSection(updateState, message, vm)
+                    if (vm.updatesEnabled) {
+                        UpdateSection(updateState, message, vm)
+                    } else {
+                        FluentText(stringResource(R.string.update_disabled_debug), FluentTextStyle.Caption1,
+                            color = AppTheme.textSecondary)
+                    }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
                         FluentButton(text = stringResource(R.string.about_repository), style = ButtonStyle.OutlinedButton,
                             onClick = { openAboutIntent(context, Intent(Intent.ACTION_VIEW, REPOSITORY_URL.toUri()), R.string.update_error_open_link) },
@@ -152,7 +157,7 @@ fun AboutBottomSheet(
         ) {
             content { scope.launch { sheetState.show() } }
         }
-        if (dialogVisible) {
+        if (vm.updatesEnabled && dialogVisible) {
             when (val state = updateState) {
                 is UpdateUiState.Available -> UpdateAvailableDialog(state, vm, maxSheetHeight)
                 is UpdateUiState.Downloading -> UpdateProgressDialog(state, vm, maxSheetHeight)
