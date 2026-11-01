@@ -45,7 +45,7 @@ class MultiRecordEncodingInstrumentedTest {
         assertEquals(listOf(NfcRecordKind.TEXT, NfcRecordKind.URI, NfcRecordKind.WIFI,
             NfcRecordKind.BLUETOOTH, NfcRecordKind.APPLICATION, NfcRecordKind.TEXT), read.records.map { it.kind })
         assertEquals("  文本第一行\n第二行  ", read.records[0].fields.single().value)
-        assertEquals(listOf("办公室 Wi-Fi", "secret:123", "AES", "WPA2-PSK"), read.records[2].fields.map { it.value })
+        assertEquals(listOf("办公室 Wi-Fi", "WPA2-PSK", "AES", "secret:123"), read.records[2].fields.map { it.value })
         assertEquals(listOf("AA:BB:CC:DD:EE:FF", "NFC 设备"), read.records[3].fields.map { it.value })
         assertEquals("com.android.settings", read.records[4].fields.single().value)
         assertEquals("第二条文本", read.records[5].fields.single().value)

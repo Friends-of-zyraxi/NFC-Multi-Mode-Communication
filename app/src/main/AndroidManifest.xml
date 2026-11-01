@@ -60,18 +60,6 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
 
-            <!-- URL 过滤器 -->
-            <intent-filter>
-                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-
-                <data
-                    android:host="developer.android.com"
-                    android:pathPrefix="/index.html"
-                    android:scheme="https" />
-            </intent-filter>
-
             <!-- 本应用模拟卡携带的 MIME 记录 -->
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />

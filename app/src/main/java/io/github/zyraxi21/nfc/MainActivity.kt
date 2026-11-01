@@ -790,7 +790,7 @@ class MainActivity : ComponentActivity() {
             return@ReaderCallback
         }
         if (writeState != WriteState.IDLE) return@ReaderCallback
-        // Reader Mode 接管标签，AAR 只交给解析器展示，避免系统按包名启动应用。
+        // Reader Mode 接管标签，URI、Wi-Fi、蓝牙和 AAR 均仅解析展示，不触发系统分发。
         // 读卡：优先用自定义 AID 直连。
         // 小米 HyperOS 会把 NFC Forum T4T AID(D2760000850101) 写死在 NFC 控制器的路由表里指向 SE，
         // 标准 NDEF 路径会被系统"碰一碰"抢占，只有自定义 AID 才会路由到本应用的 HCE 服务。

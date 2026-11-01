@@ -55,7 +55,7 @@ enum class WriteDataType(val labelResId: Int) {
 
 /**
  * Wi-Fi 加密类型，对应 WSC 属性 0x100F（Encryption Type）。
- * 这里只描述"加密算法"，认证方式（WPA/WPA2/WPA3）属于 [WifiAuth]。
+ * 这里只描述加密算法，认证方式属于 [WifiAuth]。
  */
 enum class WifiEncryption(val displayResId: Int, val wscValue: Int) {
     NONE(R.string.enc_none, 0x0001),
@@ -71,8 +71,7 @@ enum class WifiEncryption(val displayResId: Int, val wscValue: Int) {
 enum class WifiAuth(val displayResId: Int, val wscValue: Int) {
     OPEN(R.string.auth_open, 0x0001),
     WPA_PSK(R.string.auth_wpa_psk_short, 0x0002),
-    WPA2_PSK(R.string.auth_wpa2_psk_short, 0x0020),
-    WPA3_SAE(R.string.auth_wpa3_sae_short, 0x0040)
+    WPA2_PSK(R.string.auth_wpa2_psk_short, 0x0020)
 }
 
 /**
@@ -93,13 +92,13 @@ object FormDefaults {
         input.ifBlank { if (input.isEmpty()) TEXT else URL }
 
     /** Wi-Fi：SSID 和密码各自独立，留空用各自默认值 */
-    fun resolveWifiSsid(ssid: String): String = ssid.ifBlank { WIFI_SSID }
-    fun resolveWifiPassword(password: String): String = password.ifBlank { WIFI_PASSWORD }
+    fun resolveWifiSsid(ssid: String): String = ssid.ifEmpty { WIFI_SSID }
+    fun resolveWifiPassword(password: String): String = password.ifEmpty { WIFI_PASSWORD }
 
-    /** 蓝牙：两框同时留空才用默认值；只填一个则另一个也用默认值 */
+    /** 蓝牙：同时留空时使用示例；指定地址后可以省略设备名称。 */
     fun resolveBluetooth(mac: String, name: String): Pair<String, String> {
         if (mac.isBlank() && name.isBlank()) return BT_MAC to BT_NAME
-        return mac.ifBlank { BT_MAC } to name.ifBlank { BT_NAME }
+        return mac.ifBlank { BT_MAC } to name
     }
 }
 
@@ -120,7 +119,7 @@ private data class WriteRecordDraft(
         WriteDataType.TEXT -> NfcWriteRecord.Text(textInput.ifBlank { FormDefaults.TEXT })
         WriteDataType.URL -> NfcWriteRecord.Link(textInput.ifBlank { FormDefaults.URL }.trim())
         WriteDataType.WIFI -> NfcWriteRecord.Wifi(
-            FormDefaults.resolveWifiSsid(wifiSsid), FormDefaults.resolveWifiPassword(wifiPassword),
+            FormDefaults.resolveWifiSsid(wifiSsid), if (wifiAuth == WifiAuth.OPEN) "" else FormDefaults.resolveWifiPassword(wifiPassword),
             wifiEncryption, wifiAuth,
         )
         WriteDataType.BLUETOOTH -> FormDefaults.resolveBluetooth(btMac, btName).let { (mac, name) ->
@@ -361,22 +360,33 @@ private fun WriteRecordEditor(
         WriteDataType.WIFI -> {
             FluentTextField(draft.wifiSsid, { onChange(draft.copy(wifiSsid = it)) },
                 stringResource(R.string.label_wifi_ssid), hintText = FormDefaults.WIFI_SSID)
-            FluentTextField(draft.wifiPassword, { onChange(draft.copy(wifiPassword = it)) },
-                stringResource(R.string.label_wifi_password), hintText = FormDefaults.WIFI_PASSWORD)
-            var encExpanded by remember { mutableStateOf(false) }
-            FluentDropdown(
-                text = stringResource(R.string.label_encryption_type) + "：" + stringResource(draft.wifiEncryption.displayResId),
-                expanded = encExpanded, onExpandedChange = { encExpanded = it },
-                options = WifiEncryption.entries.map { stringResource(it.displayResId) },
-                onOptionSelected = { onChange(draft.copy(wifiEncryption = WifiEncryption.entries[it])); encExpanded = false },
-            )
             var authExpanded by remember { mutableStateOf(false) }
             FluentDropdown(
                 text = stringResource(R.string.label_auth_type) + "：" + stringResource(draft.wifiAuth.displayResId),
                 expanded = authExpanded, onExpandedChange = { authExpanded = it },
                 options = WifiAuth.entries.map { stringResource(it.displayResId) },
-                onOptionSelected = { onChange(draft.copy(wifiAuth = WifiAuth.entries[it])); authExpanded = false },
+                onOptionSelected = {
+                    val auth = WifiAuth.entries[it]
+                    onChange(draft.copy(wifiAuth = auth, wifiEncryption = when {
+                        auth == WifiAuth.OPEN -> WifiEncryption.NONE
+                        draft.wifiEncryption == WifiEncryption.NONE -> WifiEncryption.AES
+                        else -> draft.wifiEncryption
+                    }))
+                    authExpanded = false
+                },
             )
+            if (draft.wifiAuth != WifiAuth.OPEN) {
+                FluentTextField(draft.wifiPassword, { onChange(draft.copy(wifiPassword = it)) },
+                    stringResource(R.string.label_wifi_password), hintText = FormDefaults.WIFI_PASSWORD)
+                val encryptions = listOf(WifiEncryption.TKIP, WifiEncryption.AES, WifiEncryption.AES_TKIP)
+                var encExpanded by remember { mutableStateOf(false) }
+                FluentDropdown(
+                    text = stringResource(R.string.label_encryption_type) + "：" + stringResource(draft.wifiEncryption.displayResId),
+                    expanded = encExpanded, onExpandedChange = { encExpanded = it },
+                    options = encryptions.map { stringResource(it.displayResId) },
+                    onOptionSelected = { onChange(draft.copy(wifiEncryption = encryptions[it])); encExpanded = false },
+                )
+            }
         }
         WriteDataType.BLUETOOTH -> {
             FluentTextField(draft.btMac, { onChange(draft.copy(btMac = it)) },

@@ -13,8 +13,12 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.zyraxi21.nfc.ui.theme.WriteState
+import io.github.zyraxi21.nfc.ui.theme.WifiAuth
+import io.github.zyraxi21.nfc.ui.theme.WifiEncryption
 import io.github.zyraxi21.nfc.util.HceDataStore
+import io.github.zyraxi21.nfc.util.NfcWriteRecord
 import io.github.zyraxi21.nfc.util.createApplicationNdefMessage
+import io.github.zyraxi21.nfc.util.createNfcWriteMessage
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -42,6 +46,41 @@ class ApplicationReadInstrumentedTest {
             compose.onNodeWithText("com.example.another").assertIsDisplayed()
             compose.onNodeWithText("com.android.settings").assertDoesNotExist()
             assertEquals(Lifecycle.State.RESUMED, scenario.state)
+        }
+    }
+
+    @Test
+    fun uriWifiAndBluetoothOnlyDisplayInformationOnColdStartAndNewIntents() {
+        grantNearbyPermissions()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val records = listOf(
+            NfcWriteRecord.Link("https://example.org/read-only"),
+            NfcWriteRecord.Wifi("Read-only network", "12345678", WifiEncryption.AES, WifiAuth.WPA2_PSK),
+            NfcWriteRecord.Bluetooth("01:23:45:67:89:AB", "Read-only device"),
+        )
+        fun intent(record: NfcWriteRecord) = Intent(context, MainActivity::class.java)
+            .setAction(NfcAdapter.ACTION_NDEF_DISCOVERED)
+            .putExtra(NfcAdapter.EXTRA_NDEF_MESSAGES, arrayOf(createNfcWriteMessage(listOf(record))))
+        ActivityScenario.launch<MainActivity>(intent(records.first())).use { scenario ->
+            compose.onNodeWithText("https://example.org/read-only").assertIsDisplayed()
+            assertEquals(Lifecycle.State.RESUMED, scenario.state)
+            records.drop(1).forEach { record ->
+                scenario.onActivity { it.startActivity(intent(record).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
+                val value = when (record) {
+                    is NfcWriteRecord.Wifi -> record.ssid
+                    is NfcWriteRecord.Bluetooth -> record.name
+                    else -> error("Unexpected record")
+                }
+                // startActivity 返回时，系统可能尚未把新 Intent 交给 Activity。
+                compose.waitUntil(timeoutMillis = 5_000) {
+                    compose.onAllNodes(hasText(value) and hasAnyAncestor(hasTestTag("reader-results")))
+                        .fetchSemanticsNodes().isNotEmpty()
+                }
+                compose.onNodeWithTag("reader-results").performScrollToNode(hasText(value))
+                compose.onNode(hasText(value) and hasAnyAncestor(hasTestTag("reader-results"))).assertIsDisplayed()
+                assertEquals(Lifecycle.State.RESUMED, scenario.state)
+                scenario.onActivity { assertEquals(WriteState.IDLE, it.writeState) }
+            }
         }
     }
 

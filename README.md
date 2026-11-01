@@ -38,6 +38,7 @@
 - 编辑列表与待写入的完整消息可在 Activity 重建后恢复，取消操作后仍可继续编辑列表
 - 应用程序可从本机具有启动入口的应用列表中选择，支持按名称或包名搜索，也可手动填写包名（允许填写本机尚未安装的目标应用）
 - 应用程序使用标准 AAR（`android.com:pkg`）记录：退出本应用后扫描标签，由 Android 系统打开目标应用；在本应用读卡时只展示包名，不跳转
+- 网址使用标准 URI 记录；Wi-Fi 使用标准 WSC Configuration Token（开放、WPA-PSK、WPA2-PSK），蓝牙使用标准 BR/EDR OOB 配对记录。支持这些记录的扫描设备由系统处理打开网址、连接 Wi-Fi 或蓝牙配对，必要时由用户确认；本应用读卡只显示信息
 - 自动适配标签类型：NDEF 标签直接写入；可格式化（NDEF Formatable）标签先格式化再写入
 - 完整的写入状态机弹窗：等待卡片 → 写入中 → 成功 / 失败
 - **卡模拟（HCE）**：模拟 NFC Forum Type 4 标签（NDEF Tag），另一台手机可用读卡功能直接读回
@@ -112,8 +113,8 @@
 | --- | --- | --- |
 | 文本 | Well Known `T`（RTD_TEXT） | 状态字节含语言代码长度与编码（UTF-8 / UTF-16） |
 | 网址 | Well Known `U`（RTD_URI） | 支持 0x00–0x23 完整前缀表 |
-| Wi-Fi | MIME `application/vnd.wfa.wsc` | WSC TLV 结构：SSID（0x1045）、Network Key（0x1027）、认证类型（0x1003）、加密类型（0x100F） |
-| 蓝牙 | MIME `application/vnd.bluetooth.ep.oob` | 2 字节头 + 倒序 6 字节 MAC + 可选设备名 |
+| Wi-Fi | MIME `application/vnd.wfa.wsc` | Version + Credential；Credential 包含网络索引、SSID、认证类型、加密类型、密钥和通配 MAC |
+| 蓝牙 | MIME `application/vnd.bluetooth.ep.oob` | 2 字节小端总长度 + 倒序 6 字节 MAC + 可选 EIR 设备名字段 |
 | 应用程序 | External `android.com:pkg` | AAR（Android Application Record），支持写入、卡模拟及只读信息展示 |
 
 ---
@@ -165,7 +166,10 @@
 - 早期的独立 Activity 实现（`ReadCard.kt`、`WriteCard.kt`、`CardEmulationDeviceActivity`、`P2PCommunication.kt`）已全部清理，读写卡与卡模拟统一在 `MainActivity` + Compose 界面中完成。
 - **小米钱包的「默认卡 / 智能选卡 / 双击电源键刷卡」会接管 NFC 控制器的整条 ISO-DEP 通道。** 开启时 `dumpsys nfc` 会显示 `mEnableHostRouting: false`、`Default route: secure element`，且 `Empty_AID` 指向 SE——此时任何**没有显式 host 条目**的 AID 都会被送进安全元件，本应用的 HCE 服务收不到任何 APDU（读卡器读到的是系统「碰一碰」的 `com.xiaomi.mi_connect_service:tap_top`，或安全元件返回的 `6A82`）。由于 **AID 路由在会话的第一个 `SELECT AID` 时即绑定**，首个 SELECT 一旦落到 SE，后续所有 APDU（包括平台自己的 NDEF 检查）都进不了 host，表现为完全读不到内容。
 - **上述问题的修复**：关闭「默认卡 / 智能选卡 / 双击电源键刷卡」，并把「默认钱包应用」改为非钱包应用，然后重启一次 NFC。**判据是 `Default route: host` 与 `Empty_AID → 0x00`**（`mEnableHostRouting` 并非决定性字段，实测有设备在问题解决后它仍显示 `false`）。诊断命令：`adb shell dumpsys nfc | Select-String "Default route|Empty_AID|AID_F012345678|AID_D2760000850101"`。
-- Wi-Fi WSC 记录（`application/vnd.wfa.wsc`）的**写入与解析均遵循 Wi-Fi Simple Configuration 规范**：属性 `0x1003` = Authentication Type、`0x100F` = Encryption Type、`0x1027` = Network Key、`0x1045` = SSID，取值表同样按规范实现，可与标准第三方读写器互操作。
+- 系统扫描行为取决于 Android 版本和设备实现。根据 [Android NFC 文档](https://developer.android.com/develop/connectivity/nfc/nfc)，Android 17 扫描 HTTP(S) 标签后需要点击“打开链接”通知；Wi-Fi 配置和经典蓝牙 OOB 标签需要系统提供相应处理能力，蓝牙配对后能否建立连接还取决于外设服务。此类标签不提供 BLE 专用配对数据。
+- 多记录 NDEF 消息不是操作脚本，系统不会依次执行全部记录。要明确触发网址、Wi-Fi 或蓝牙操作，建议单独写入对应类型的记录；混合标签中的应用记录也可能影响系统分发。
+- Wi-Fi WSC 记录（`application/vnd.wfa.wsc`）包含 Version 和 Credential，后者包含 Network Index、SSID、Authentication Type、Encryption Type、Network Key 和通配 MAC 地址；SSID 最多 32 个 UTF-8 字节，个人网络密码为 8—63 个可打印 ASCII 字符或 64 位十六进制密钥，开放网络使用空密码。WSC 没有本应用原先为 WPA3 定义的认证值，写卡表单已移除此选项，也不生成 WEP 配置。
+- 蓝牙 OOB 记录（`application/vnd.bluetooth.ep.oob`）按 [Bluetooth GAP 规范](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-60/out/en/host/generic-access-profile.html)使用小端总长度、反序 BD_ADDR 和 EIR Complete Local Name；名称可省略，最多 248 个 UTF-8 字节。Wi-Fi 和蓝牙的旧版自定义载荷不再作为有效标准配置解析，仍可查看原始数据。
 - Wi-Fi 密码、蓝牙 MAC 等数据以标准（未加密）格式存储在标签中，请勿在公共标签中写入敏感信息。
 - 卡模拟内容为只读模拟（Write Access = Never），读卡方无法修改。
 - 卡模拟读取协议自 2026-09 版起改为带偏移量的分块读取，**收发两端需安装同一版本**，跨版本可能取到错位数据。

@@ -59,16 +59,18 @@ class NfcReadResultInstrumentedTest {
         val credential = tlv(0x1045, "Cafe\nSSID: literal".toByteArray()) +
             tlv(0x1027, "pa:ss\nword".toByteArray()) +
             tlv(0x1003, byteArrayOf(0, 0x20)) + tlv(0x100F, byteArrayOf(0, 8)) +
-            tlv(0x1026, byteArrayOf(1))
-        val result = read(mime("application/vnd.wfa.wsc", tlv(0x100E, credential)))
+            tlv(0x1026, byteArrayOf(2)) + tlv(0x1020, ByteArray(6) { 0xFF.toByte() })
+        val result = read(mime("application/vnd.wfa.wsc", tlv(0x104A, byteArrayOf(0x10)) + tlv(0x100E, credential)))
         assertEquals(NfcRecordKind.WIFI, result.kind)
-        assertEquals(listOf("Cafe\nSSID: literal", "pa:ss\nword", "WPA2-PSK", "AES", "基础设施"), result.fields.map { it.value })
+        assertEquals(listOf("Cafe\nSSID: literal", "pa:ss\nword", "WPA2-PSK", "AES"), result.fields.map { it.value })
+        assertEquals(listOf("1.0", "2", "FF:FF:FF:FF:FF:FF"), result.details.map { it.value })
         assertNull(result.warningResId)
     }
 
     @Test
     fun truncatedWifiKeepsDecodedFieldsAndReportsIncompleteData() {
-        val bytes = tlv(0x1045, "My Wi-Fi".toByteArray()) + byteArrayOf(0x10, 0x27, 0x01, 0x00, 0x41)
+        val credential = tlv(0x1045, "My Wi-Fi".toByteArray()) + byteArrayOf(0x10, 0x27, 0x01, 0x00, 0x41)
+        val bytes = tlv(0x104A, byteArrayOf(0x10)) + tlv(0x100E, credential)
         val result = read(mime("application/vnd.wfa.wsc", bytes))
         assertEquals("My Wi-Fi", result.fields.single().value)
         assertEquals(R.string.reader_parse_warning, result.warningResId)
@@ -79,15 +81,45 @@ class NfcReadResultInstrumentedTest {
     }
 
     @Test
-    fun bluetoothDecodesBothExistingWriterAndStandardOobNames() {
+    fun bluetoothDecodesStandardOobAndRejectsTheOldUnframedFormat() {
         val address = byteArrayOf(0xFF.toByte(), 0xEE.toByte(), 0xDD.toByte(), 0xCC.toByte(), 0xBB.toByte(), 0xAA.toByte())
         val name = "NFC 设备".toByteArray()
         val legacy = read(mime("application/vnd.bluetooth.ep.oob", byteArrayOf(0, 0) + address + name))
-        assertEquals(listOf("AA:BB:CC:DD:EE:FF", "NFC 设备"), legacy.fields.map { it.value })
+        assertTrue(legacy.fields.isEmpty())
+        assertEquals(R.string.reader_parse_warning, legacy.warningResId)
         val length = 10 + name.size
         val standard = read(mime("application/vnd.bluetooth.ep.oob", byteArrayOf(length.toByte(), 0) + address + byteArrayOf((name.size + 1).toByte(), 0x09) + name))
-        assertEquals(legacy.fields, standard.fields)
+        assertEquals(listOf("AA:BB:CC:DD:EE:FF", "NFC 设备"), standard.fields.map { it.value })
         assertNull(standard.warningResId)
+    }
+
+    @Test
+    fun wifiRejectsFlatAttributesAndMissingCredentialFields() {
+        val flat = tlv(0x1045, "flat".toByteArray()) + tlv(0x1027, "12345678".toByteArray())
+        val result = read(mime("application/vnd.wfa.wsc", flat))
+        assertTrue(result.fields.isEmpty())
+        assertEquals(R.string.reader_parse_warning, result.warningResId)
+        assertArrayEquals(flat, result.payload)
+        val incomplete = tlv(0x104A, byteArrayOf(0x10)) + tlv(0x100E, tlv(0x1045, "SSID".toByteArray()))
+        assertEquals(R.string.reader_parse_warning, read(mime("application/vnd.wfa.wsc", incomplete)).warningResId)
+    }
+
+    @Test
+    fun bluetoothChecksFullLengthAndEirBoundariesAndPrefersCompleteName() {
+        val address = byteArrayOf(6, 5, 4, 3, 2, 1)
+        fun oob(eir: ByteArray): ByteArray {
+            val size = 8 + eir.size
+            return byteArrayOf(size.toByte(), (size ushr 8).toByte()) + address + eir
+        }
+        val payload = oob(byteArrayOf(2, 8, 65, 4, 9, 65, 66, 67))
+        val result = read(mime("application/vnd.bluetooth.ep.oob", payload))
+        assertEquals(listOf("01:02:03:04:05:06", "ABC"), result.fields.map { it.value })
+        assertNull(result.warningResId)
+        listOf(payload + byteArrayOf(0), payload.dropLast(1).toByteArray(), oob(byteArrayOf(5, 9, 65))).forEach {
+            val malformed = read(mime("application/vnd.bluetooth.ep.oob", it))
+            assertEquals(R.string.reader_parse_warning, malformed.warningResId)
+            assertArrayEquals(it, malformed.payload)
+        }
     }
 
     @Test

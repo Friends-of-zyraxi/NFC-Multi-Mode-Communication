@@ -116,7 +116,8 @@
     <string name="reader_field_password">密码</string>
     <string name="reader_field_auth">认证类型</string>
     <string name="reader_field_encryption">加密类型</string>
-    <string name="reader_field_network">网络类型</string>
+    <string name="reader_field_network_index">网络索引</string>
+    <string name="reader_field_wsc_version">WSC 版本</string>
     <string name="reader_field_mac">MAC 地址</string>
     <string name="reader_field_device">设备名称</string>
     <string name="reader_field_language">语言代码</string>
@@ -243,7 +244,11 @@
     <string name="error_wifi_ssid_blank">请输入 Wi-Fi 名称</string>
     <string name="error_bt_mac_blank">请输入蓝牙 MAC 地址</string>
     <string name="error_bt_mac_invalid">请输入有效的 MAC 地址，例如 AA:BB:CC:DD:EE:FF</string>
-    <string name="error_record_field_too_large">单个配置字段的内容过长，请减少内容。</string>
+    <string name="error_wifi_ssid_too_long">Wi-Fi 名称的 UTF-8 编码不能超过 32 字节。</string>
+    <string name="error_wifi_open_configuration">开放网络须使用无加密和空密码。</string>
+    <string name="error_wifi_security_unsupported">WPA/WPA2 个人网络请选择 TKIP、AES 或 AES+TKIP 加密。</string>
+    <string name="error_wifi_password_invalid">密码须为 8—63 个可打印 ASCII 字符，或 64 位十六进制密钥。</string>
+    <string name="error_bt_name_too_long">蓝牙设备名称的 UTF-8 编码不能超过 248 字节。</string>
     <string name="error_content_blank">请输入内容</string>
     <string name="error_application_package">请输入有效的应用包名，例如 com.example.app</string>
     <string name="status_tap_card">请将卡靠近设备背面…</string>
@@ -275,9 +280,7 @@
     <string name="auth_wpa_eap">WPA-EAP</string>
     <string name="auth_wpa2_eap">WPA2-EAP</string>
     <string name="auth_wpa2_psk">WPA2-PSK</string>
-    <string name="auth_wpa3_sae">WPA3-SAE</string>
     <string name="auth_wpa_wpa2_psk">WPA/WPA2-PSK</string>
-    <string name="auth_wpa3_eap">WPA3-EAP</string>
 
     <!-- 加密类型（parse 显示用） -->
     <string name="enc_none">无</string>
@@ -290,7 +293,6 @@
     <string name="auth_open">开放</string>
     <string name="auth_wpa_psk_short">WPA-PSK</string>
     <string name="auth_wpa2_psk_short">WPA2-PSK</string>
-    <string name="auth_wpa3_sae_short">WPA3-SAE</string>
 
     <!-- ================================================================== -->
     <!-- HCE 服务                                                             -->

@@ -121,6 +121,40 @@ class MultiRecordEditorInstrumentedTest {
         }
     }
 
+    @Test
+    fun openNetworkWritesAnEmptyKeyAndRestoresThePersonalNetworkPassword() {
+        var written: List<NfcWriteRecord>? = null
+        var emulated: List<NfcWriteRecord>? = null
+        val restoration = StateRestorationTester(compose)
+        show({ written = it }, { emulated = it }, restoration)
+        selectType("Wi-Fi")
+        compose.onAllNodes(hasSetTextAction())[0].performScrollTo().performTextReplacement("Public Wi-Fi")
+        compose.onAllNodes(hasSetTextAction())[1].performScrollTo().performTextReplacement("personal-key")
+        fun selectAuth(current: String, option: String) {
+            compose.onNodeWithTag("write-records").performScrollToNode(hasText("认证类型：" + current))
+            compose.onNodeWithText("认证类型：" + current).performClick()
+            compose.onNodeWithText(option).performClick()
+        }
+        selectAuth("WPA2-PSK", "开放")
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(1)
+        footer()
+        compose.onNodeWithText("写入标签").performClick()
+        compose.onNodeWithText("卡模拟").performClick()
+        compose.runOnIdle {
+            val expected = listOf(NfcWriteRecord.Wifi("Public Wi-Fi", "", WifiEncryption.NONE, WifiAuth.OPEN))
+            assertEquals(expected, written)
+            assertEquals(expected, emulated)
+        }
+        selectAuth("开放", "WPA2-PSK")
+        compose.onAllNodes(hasSetTextAction())[1].performScrollTo().assertTextContains("personal-key")
+        footer()
+        compose.onNodeWithText("写入标签").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf(NfcWriteRecord.Wifi("Public Wi-Fi", "personal-key", WifiEncryption.AES, WifiAuth.WPA2_PSK)), written)
+        }
+    }
+
     private fun show(
         onWrite: (List<NfcWriteRecord>) -> Unit = {},
         onEmulate: (List<NfcWriteRecord>) -> Unit = {},

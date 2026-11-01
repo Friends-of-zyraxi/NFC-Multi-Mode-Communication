@@ -120,39 +120,45 @@ private fun parseRecord(context: Context, record: NdefRecord): NfcReadRecord {
                 fields += NfcRecordField(R.string.reader_field_package, packageName, monospaced = true)
             }
             NfcRecordKind.WIFI -> {
-                val complete = parseWifiFields(context, payload, fields)
+                val complete = parseWifiFields(context, payload, fields, details)
                 if (!complete || fields.isEmpty()) warning = R.string.reader_parse_warning
             }
             NfcRecordKind.BLUETOOTH -> {
                 require(payload.size >= 8)
+                val length = (payload[0].toInt() and 0xFF) or ((payload[1].toInt() and 0xFF) shl 8)
+                require(length == payload.size)
                 fields += NfcRecordField(
                     R.string.reader_field_mac,
                     payload.copyOfRange(2, 8).reversedArray().toDisplayHex(":"),
                     monospaced = true,
                 )
-                // 本应用的写卡格式在地址后直接保存 UTF-8 名称（头部长度为 0）。
-                if (payload[0] == 0.toByte() && payload[1] == 0.toByte()) {
-                    val name = payload.copyOfRange(8, payload.size).decodeToString(throwOnInvalidSequence = true)
-                    if (name.isNotEmpty()) fields += NfcRecordField(R.string.reader_field_device, name)
-                } else {
-                    // 标准 OOB 的设备名位于 EIR 数据结构中，不能把长度和类型字节当成名称。
-                    val length = (payload[0].toInt() and 0xFF) or ((payload[1].toInt() and 0xFF) shl 8)
-                    require(length in 8..payload.size)
-                    var offset = 8
-                    while (offset < length) {
-                        val size = payload[offset].toInt() and 0xFF
-                        if (size == 0) break
-                        require(offset + size < length)
-                        val eirType = payload[offset + 1].toInt() and 0xFF
-                        if (eirType == 0x08 || eirType == 0x09) {
-                            fields += NfcRecordField(
-                                R.string.reader_field_device,
-                                payload.copyOfRange(offset + 2, offset + size + 1)
-                                    .decodeToString(throwOnInvalidSequence = true),
-                            )
-                        }
-                        offset += size + 1
+                var offset = 8
+                var shortName: String? = null
+                var completeName: String? = null
+                while (offset < length) {
+                    val size = payload[offset].toInt() and 0xFF
+                    if (size == 0) {
+                        require(payload.copyOfRange(offset, length).all { it == 0.toByte() })
+                        break
                     }
+                    require(offset + size < length)
+                    val eirType = payload[offset + 1].toInt() and 0xFF
+                    if (eirType == 0x08 || eirType == 0x09) {
+                        require(size - 1 <= 248)
+                        val name = payload.copyOfRange(offset + 2, offset + size + 1)
+                            .decodeToString(throwOnInvalidSequence = true)
+                        if (eirType == 0x09) {
+                            require(completeName == null)
+                            completeName = name
+                        } else {
+                            require(shortName == null)
+                            shortName = name
+                        }
+                    }
+                    offset += size + 1
+                }
+                (completeName ?: shortName)?.takeIf { it.isNotEmpty() }?.let {
+                    fields += NfcRecordField(R.string.reader_field_device, it)
                 }
             }
             NfcRecordKind.DATA, NfcRecordKind.EMPTY -> Unit
@@ -164,52 +170,84 @@ private fun parseRecord(context: Context, record: NdefRecord): NfcReadRecord {
     return NfcReadRecord(kind, fields, payload, type, record.tnf, record.id, details, warning)
 }
 
-/** WSC 的 Credential 可以嵌套；长度不完整时保留已经解出的字段并提示查看原始数据。 */
+/** 仅解析标准 Configuration Token 的 Credential，损坏数据保留已解出的字段与原始载荷。 */
 private fun parseWifiFields(
     context: Context,
     payload: ByteArray,
     fields: MutableList<NfcRecordField>,
-    depth: Int = 0,
+    details: MutableList<NfcRecordField>,
 ): Boolean {
-    if (depth > 8) return false
-    var index = 0
-    var complete = true
-    fun ByteArray.u16(): Int {
-        require(size == 2)
-        return ((this[0].toInt() and 0xFF) shl 8) or (this[1].toInt() and 0xFF)
+    var versionFound = false
+    var credentialFound = false
+    var credentialsComplete = true
+    val complete = parseWscAttributes(payload) { type, data ->
+        when (type) {
+            0x104A -> {
+                require(!versionFound && data.contentEquals(byteArrayOf(0x10)))
+                versionFound = true
+                details += NfcRecordField(R.string.reader_field_wsc_version, "1.0")
+            }
+            0x100E -> {
+                credentialFound = true
+                if (!parseWifiCredential(context, data, fields, details)) credentialsComplete = false
+            }
+        }
     }
+    return complete && versionFound && credentialFound && credentialsComplete
+}
+
+private fun parseWifiCredential(
+    context: Context,
+    payload: ByteArray,
+    fields: MutableList<NfcRecordField>,
+    details: MutableList<NfcRecordField>,
+): Boolean {
+    val found = mutableSetOf<Int>()
+    val complete = parseWscAttributes(payload) { type, data ->
+        if (type in setOf(0x1026, 0x1045, 0x1003, 0x100F, 0x1027, 0x1020)) require(found.add(type))
+        when (type) {
+            0x1045 -> {
+                require(data.size in 1..32)
+                fields += NfcRecordField(R.string.reader_field_ssid, data.decodeToString(throwOnInvalidSequence = true))
+            }
+            0x1027 -> {
+                require(data.size <= 64)
+                fields += NfcRecordField(R.string.reader_field_password, data.decodeToString(throwOnInvalidSequence = true))
+            }
+            0x1003 -> fields += NfcRecordField(R.string.reader_field_auth, authTypeName(context, data.wscU16()))
+            0x100F -> fields += NfcRecordField(R.string.reader_field_encryption, encryptionTypeName(context, data.wscU16()))
+            0x1020 -> {
+                require(data.size == 6)
+                details += NfcRecordField(R.string.reader_field_mac, data.toDisplayHex(":"), monospaced = true)
+            }
+            0x1026 -> {
+                require(data.size == 1)
+                details += NfcRecordField(R.string.reader_field_network_index, (data[0].toInt() and 0xFF).toString())
+            }
+            0x100E -> error("Credential cannot contain another Credential")
+        }
+    }
+    return complete && found.containsAll(setOf(0x1026, 0x1045, 0x1003, 0x100F, 0x1027, 0x1020))
+}
+
+private fun ByteArray.wscU16(): Int {
+    require(size == 2)
+    return ((this[0].toInt() and 0xFF) shl 8) or (this[1].toInt() and 0xFF)
+}
+
+private inline fun parseWscAttributes(payload: ByteArray, onAttribute: (Int, ByteArray) -> Unit): Boolean {
+    var index = 0
     while (index < payload.size) {
         if (index + 4 > payload.size) return false
-        val type = payload.copyOfRange(index, index + 2).u16()
-        val length = payload.copyOfRange(index + 2, index + 4).u16()
+        val type = payload.copyOfRange(index, index + 2).wscU16()
+        val length = payload.copyOfRange(index + 2, index + 4).wscU16()
         index += 4
         if (length > payload.size - index) return false
         val data = payload.copyOfRange(index, index + length)
         index += length
-        when (type) {
-            0x1045 -> fields += NfcRecordField(R.string.reader_field_ssid, data.decodeToString(throwOnInvalidSequence = true))
-            0x1027 -> fields += NfcRecordField(R.string.reader_field_password, data.decodeToString(throwOnInvalidSequence = true))
-            0x1003 -> fields += NfcRecordField(R.string.reader_field_auth, authTypeName(context, data.u16()))
-            0x100F -> fields += NfcRecordField(R.string.reader_field_encryption, encryptionTypeName(context, data.u16()))
-            0x1020 -> {
-                require(data.size == 6)
-                fields += NfcRecordField(R.string.reader_field_mac, data.toDisplayHex(":"), monospaced = true)
-            }
-            0x1026 -> {
-                require(data.size == 1)
-                val networkType = when (val value = data[0].toInt() and 0xFF) {
-                    0x00 -> context.getString(R.string.msg_unknown)
-                    0x01 -> context.getString(R.string.msg_infrastructure)
-                    0x02 -> context.getString(R.string.msg_independent)
-                    else -> context.getString(R.string.format_reserved_type, value.toString(16))
-                }
-                fields += NfcRecordField(R.string.reader_field_network, networkType)
-            }
-            0x100E -> if (!parseWifiFields(context, data, fields, depth + 1)) complete = false
-            // 其他 WSC 属性保留在原始载荷中，不混入网络配置的主要字段。
-        }
+        onAttribute(type, data)
     }
-    return complete
+    return true
 }
 
 private fun authTypeName(context: Context, value: Int): String = when (value) {
@@ -220,8 +258,6 @@ private fun authTypeName(context: Context, value: Int): String = when (value) {
     0x0010 -> context.getString(R.string.auth_wpa2_eap)
     0x0020 -> context.getString(R.string.auth_wpa2_psk)
     0x0022 -> context.getString(R.string.auth_wpa_wpa2_psk)
-    0x0040 -> context.getString(R.string.auth_wpa3_sae)
-    0x0080 -> context.getString(R.string.auth_wpa3_eap)
     else -> context.getString(R.string.format_unknown_auth, value)
 }
 

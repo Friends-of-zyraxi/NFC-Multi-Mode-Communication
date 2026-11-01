@@ -10,6 +10,7 @@ import io.github.zyraxi21.nfc.ui.theme.WifiEncryption
 import io.github.zyraxi21.nfc.ui.theme.WriteDataType
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.Locale
 
 /** Type 4 Tag 文件上限为 0xFFFE B，其中 2 B 用于 NLEN。 */
@@ -36,14 +37,25 @@ sealed class NfcWriteRecord(val type: WriteDataType) {
             else -> null
         }
         is Wifi -> when {
-            ssid.isBlank() -> R.string.error_wifi_ssid_blank
-            ssid.toByteArray().size > 0xFFFF || password.toByteArray().size > 0xFFFF -> R.string.error_record_field_too_large
+            ssid.isEmpty() -> R.string.error_wifi_ssid_blank
+            ssid.toByteArray(Charsets.UTF_8).size > 32 -> R.string.error_wifi_ssid_too_long
+            auth == WifiAuth.OPEN && (encryption != WifiEncryption.NONE || password.isNotEmpty()) -> R.string.error_wifi_open_configuration
+            auth != WifiAuth.OPEN && encryption !in listOf(WifiEncryption.TKIP, WifiEncryption.AES, WifiEncryption.AES_TKIP) -> R.string.error_wifi_security_unsupported
+            auth != WifiAuth.OPEN && !isValidWifiPsk(password) -> R.string.error_wifi_password_invalid
             else -> null
         }
-        is Bluetooth -> if (!mac.matches(Regex("(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}"))) R.string.error_bt_mac_invalid else null
+        is Bluetooth -> when {
+            !mac.matches(Regex("(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}")) -> R.string.error_bt_mac_invalid
+            name.toByteArray(Charsets.UTF_8).size > 248 -> R.string.error_bt_name_too_long
+            else -> null
+        }
         is Application -> if (!isValidApplicationPackageName(packageName)) R.string.error_application_package else null
     }
 }
+
+private fun isValidWifiPsk(password: String): Boolean =
+    (password.length in 8..63 && password.all { it in ' '..'~' }) ||
+        password.matches(Regex("[0-9a-fA-F]{64}"))
 
 class InvalidWriteRecordException(val recordIndex: Int, @param:StringRes val errorResId: Int) :
     IllegalArgumentException("Invalid NFC record at index $recordIndex")
@@ -66,22 +78,34 @@ fun createNfcWriteMessage(records: List<NfcWriteRecord>): NdefMessage {
 }
 
 private fun createWifiRecord(record: NfcWriteRecord.Wifi): NdefRecord {
-    val payload = ByteArrayOutputStream()
-    fun writeTlv(type: Int, data: ByteArray) {
-        payload.write(ByteBuffer.allocate(4).putShort(type.toShort()).putShort(data.size.toShort()).array())
-        payload.write(data)
+    fun ByteArrayOutputStream.writeTlv(type: Int, data: ByteArray) {
+        write(ByteBuffer.allocate(4).putShort(type.toShort()).putShort(data.size.toShort()).array())
+        write(data)
     }
     fun valueBytes(value: Int) = ByteBuffer.allocate(2).putShort(value.toShort()).array()
-    writeTlv(0x1045, record.ssid.toByteArray(Charsets.UTF_8))
-    writeTlv(0x1027, record.password.toByteArray(Charsets.UTF_8))
-    writeTlv(0x100F, valueBytes(record.encryption.wscValue))
-    writeTlv(0x1003, valueBytes(record.auth.wscValue))
+    // WSC Configuration Token：Version + Credential，属性和长度使用大端序。
+    val credential = ByteArrayOutputStream().apply {
+        writeTlv(0x1026, byteArrayOf(1)) // Network Index
+        writeTlv(0x1045, record.ssid.toByteArray(Charsets.UTF_8))
+        writeTlv(0x1003, valueBytes(record.auth.wscValue))
+        writeTlv(0x100F, valueBytes(record.encryption.wscValue))
+        writeTlv(0x1027, record.password.toByteArray(Charsets.UTF_8))
+        // 未限定接收方，使用 WSC 的通配 MAC 地址。
+        writeTlv(0x1020, ByteArray(6) { 0xFF.toByte() })
+    }
+    val payload = ByteArrayOutputStream().apply {
+        writeTlv(0x104A, byteArrayOf(0x10))
+        writeTlv(0x100E, credential.toByteArray())
+    }
     return NdefRecord.createMime("application/vnd.wfa.wsc", payload.toByteArray())
 }
 
 private fun createBluetoothRecord(record: NfcWriteRecord.Bluetooth): NdefRecord {
     val mac = record.mac.split(':').map { it.toInt(16).toByte() }.reversed().toByteArray()
-    // 保留本应用现有的 OOB 格式，与已发布版本的读卡解析兼容。
-    val payload = byteArrayOf(0, 0) + mac + record.name.toByteArray(Charsets.UTF_8)
+    val name = record.name.toByteArray(Charsets.UTF_8)
+    // BR/EDR OOB：小端总长度（包含长度本身）+ 小端 BD_ADDR + EIR 数据。
+    val eir = if (name.isEmpty()) byteArrayOf() else byteArrayOf((name.size + 1).toByte(), 0x09) + name
+    val payload = ByteBuffer.allocate(8 + eir.size).order(ByteOrder.LITTLE_ENDIAN)
+        .putShort((8 + eir.size).toShort()).put(mac).put(eir).array()
     return NdefRecord.createMime("application/vnd.bluetooth.ep.oob", payload)
 }
