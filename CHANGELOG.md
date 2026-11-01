@@ -7,21 +7,29 @@
 
 ## [未发布]
 
+## [2026.11.01.1] - 2026-11-01
+
 ### 新增
 
 - 写卡和卡模拟新增“应用程序”类型，支持搜索并选择本机应用或手动输入包名，使用标准 Android 应用记录；本应用读卡时仅展示信息，不启动目标应用
+- 点击标题栏打开 Fluent BottomSheet 关于面板，查看应用图标、实际版本、维护者、开源许可证和 GitHub 仓库；支持检查正式版本、查看更新说明、系统下载、进度与取消、后台恢复及安装引导
 - debug 构建使用独立包名 `io.github.zyraxi21.nfc.debug`，应用名称为“NFC 通信 开发版”，版本名追加 `-debug`，可与签名正式版同时安装
 - 自适应图标新增 monochrome 层（`drawable/ic_launcher_monochrome.xml`），支持 Android 13 及以上的主题图标，几何参数与前景层保持一致
 
 ### 变更
 
+- 控件恢复 Fluent SDK 默认圆角，提示改用原生 Accent Snackbar，保留浅深色对比度、动态品牌色、菜单宽度和触控区域修正
+- 输入框背景改为透明，聚焦时标签与下划线使用品牌色，下划线在聚焦或报错时加粗；简化关于标题和更新提示文案
 - 应用图标改用自适应图标（adaptive icon）：背景层 `ic_launcher_background.xml` 铺满渐变，前景层 `ic_launcher_foreground.xml` 只保留白色 NFC 图形；`android:icon` / `android:roundIcon` 由 `@drawable/nfc_logo`、`@drawable/nfc_logo_round` 改指 `@mipmap/ic_launcher`、`@mipmap/ic_launcher_round`
 - 前景图形按源文件 `NFC.svg` 的 18% 留白比例缩放至外沿 46dp，在 72dp 可见区内保留同等边距，圆形、圆角方形等遮罩均不会切到笔画
+- Gradle Wrapper 升级至 9.8.2；通过 Daemon JVM 条件统一使用 JDK 25，并提供跨平台下载配置
 
 ### 修复
 
-- 恢复标题栏原有的 Fluent BottomSheet 关于面板，以及应用信息、仓库链接、检查更新、系统下载和安装引导功能
 - 修复可格式化标签被当成已有 NDEF 标签而跳过实际写入的问题
+- 标题栏的点击水波纹延伸至系统状态栏，修复顶部反馈范围不完整的问题
+- 补齐 FluentTheme 的 `runtime-livedata` 依赖，修复新克隆项目启动闪退的问题
+- Play services 依赖固定从官方 Google Maven 仓库获取，避免镜像缺少 AAR 时构建失败
 - 修复桌面图标显示为圆形底衬内嵌方形图、四周露出白底的问题：此前 `android:icon` 指向普通矢量图，系统只能按 legacy 图标处理，由启动器自行补加形状底衬
 
 ## [2026.10.07.1] - 2026-10-07
@@ -70,5 +78,6 @@
 
 更完整的说明见 [README](README.md)。
 
-[Unreleased]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/compare/v2026.10.07.1...HEAD
+[未发布]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/compare/v2026.11.01.1...HEAD
+[2026.11.01.1]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/compare/v2026.10.07.1...v2026.11.01.1
 [2026.10.07.1]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/releases/tag/v2026.10.07.1

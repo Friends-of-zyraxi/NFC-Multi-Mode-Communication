@@ -18,8 +18,8 @@ android {
         applicationId = "io.github.zyraxi21.nfc"
         minSdk = 34
         targetSdk = 37
-        versionCode = 202610071
-        versionName = "2026.10.07.1"
+        versionCode = 202611011
+        versionName = "2026.11.01.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
