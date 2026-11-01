@@ -1,7 +1,7 @@
 ---
 feature: dark-mode-token-conformance
 status: delivered
-updated: 2026-10-25
+updated: 2026-11-01
 branch: main
 commits: HEAD
 ---
@@ -10,9 +10,11 @@ commits: HEAD
 
 ## Report
 
-**What was built** — `ui/theme/DesignTokens.kt` 统一管理颜色、排版、间距和页面布局；文本颜色在组合期写进 `TextStyle`；顶栏浅色模式使用品牌色、深色模式使用中性表面；三页保留响应式外边距和文字居中。2026-10-25 按用户要求取消统一 16dp 圆角，控件形状与背景采用 Fluent 默认令牌，输入框保留文字对比度修正；Snackbar 改用原生 `Accent` 样式；标题栏的点击反馈覆盖状态栏区域。`ThemeContrastTest` 保留 14 项对比度与色阶回归用例。
+**What was built** — `ui/theme/DesignTokens.kt` 统一管理颜色、排版、间距和页面布局；文本颜色在组合期写进 `TextStyle`；顶栏浅色模式使用品牌色、深色模式使用中性表面；三页保留响应式外边距和文字居中。2026-10-25 按用户要求取消统一 16dp 圆角，控件形状采用 Fluent 默认令牌，Snackbar 改用原生 `Accent` 样式，标题栏的点击反馈覆盖状态栏区域。2026-11-01 将输入框背景改为透明，并为聚焦和错误状态提供颜色与下划线反馈。`ThemeContrastTest` 保留 14 项对比度与色阶回归用例。
 
 **Verification（2026-10-25）** — Debug、Release 和设备测试 APK 构建通过；57 项单元测试及 13 项设备测试通过；Lint 无错误。独立 Android 17 AVD 已检查浅色、深色输入框、原生 Snackbar，以及按住标题时覆盖状态栏的水波纹。
+
+**Verification（2026-11-01）** — 使用 Gradle 9.8.2 完成 Debug、Release 和设备测试 APK 构建，57 项单元测试及 Lint 通过；Release APK 的版本为 `2026.11.01.1`，versionCode 为 `202611011`。
 
 **Journey log** — 踩坑记录：
 
@@ -156,7 +158,7 @@ Fluent 的 `Menu` 浮层宽度取自**内容固有宽度**（`MenuContent` 内�
 
 `FluentText` 是本工程唯一的文本组件：它把颜色**在组合期写进 `TextStyle`**，不依赖 `LocalContentColor`。`BasicText` 的隐式取色链路在编译期与单测里都无法验证，一旦落到默认值就是黑字压深色底，因此这里刻意不走那条路。
 
-`FluentTextField` 直接使用 Fluent `TextField`。自定义 `TextFieldTokens` 只保留输入文字、标签、提示、光标、分隔线和错误的语义颜色，背景与形状采用 SDK 默认实现。控件允许多行内容增长，保留 56dp 最小高度。
+`FluentTextField` 直接使用 Fluent `TextField`，形状采用 SDK 默认实现。自定义 `TextFieldTokens` 为输入文字、标签、提示、光标、分隔线和错误指定语义颜色，容器与输入区背景设为透明以跟随父容器。聚焦时标签及下划线采用品牌色，聚焦或报错时下划线加粗至 2dp，静息态为 1dp。控件允许多行内容增长，保留 56dp 最小高度。
 
 ### edge-to-edge
 

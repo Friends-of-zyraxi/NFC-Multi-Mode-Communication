@@ -5,7 +5,7 @@
     <string name="app_name">NFC 通信</string>
     <string name="app_title">基于 NFC 的多模式通信实践</string>
     <string name="about_open">打开关于页面</string>
-    <string name="about_title">关于 NFC 通信</string>
+    <string name="about_title">关于</string>
     <string name="about_description">读卡、写卡、卡模拟与端对端通信</string>
     <string name="about_version">版本 %1$s</string>
     <string name="about_version_unknown">未知</string>
@@ -18,7 +18,7 @@
     <string name="about_sheet_collapsed">关于面板已收起</string>
     <string name="about_sheet_closed">关于面板已关闭</string>
     <string name="update_title">应用更新</string>
-    <string name="update_hint">检查 GitHub 上的最新正式版本，查看更新内容后选择下载。</string>
+    <string name="update_hint">检查最新正式版本，查看更新内容后选择下载。</string>
     <string name="update_check">检查更新</string>
     <string name="update_checking">正在检查更新…</string>
     <string name="update_current">当前已是最新版本</string>

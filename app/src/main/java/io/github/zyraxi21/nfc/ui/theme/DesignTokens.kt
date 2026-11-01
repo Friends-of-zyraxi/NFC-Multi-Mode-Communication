@@ -45,6 +45,7 @@ import com.microsoft.fluentui.theme.ThemeMode
 import com.microsoft.fluentui.theme.token.FluentAliasTokens
 import com.microsoft.fluentui.theme.token.FluentColor
 import com.microsoft.fluentui.theme.token.FluentGlobalTokens
+import com.microsoft.fluentui.theme.token.StateBrush
 import com.microsoft.fluentui.theme.token.StateColor
 import com.microsoft.fluentui.theme.token.controlTokens.ButtonStyle
 import com.microsoft.fluentui.theme.token.controlTokens.TextFieldInfo
@@ -695,7 +696,7 @@ fun ProvidePageGutter(
     CompositionLocalProvider(LocalPageGutter provides gutter, content = content)
 }
 
-/** 原生文本输入框保留文字对比度修正，形状和背景由 Fluent 默认令牌提供。 */
+/** 原生文本输入框保留文字对比度修正，背景透明，形状由 Fluent 默认令牌提供。 */
 @Composable
 fun FluentTextField(
     value: String,
@@ -716,19 +717,39 @@ fun FluentTextField(
     )
 }
 
-/** 仅修正输入文字、提示和错误等颜色，保留 Fluent 默认的背景与形状。 */
+/** 修正输入文字、提示和错误等颜色，并把背景改为透明；形状仍由 Fluent 默认令牌提供。 */
 private class AppTextFieldTokens(
     private val fieldLabel: Color,
     private val fieldHint: Color,
     private val fieldInput: Color,
     private val fieldCursor: Color,
     private val fieldDivider: Color,
+    private val fieldFocus: Color,
     private val fieldError: Color
 ) : TextFieldTokens() {
 
+    /**
+     * Fluent 默认以 Background1（浅色模式为白、深色模式为近黑）铺底，会与页面自身背景
+     * 形成明显色块。改为透明后底色跟随父容器。Color.Transparent 不携带语义色值，
+     * 浅色与深色模式下表现一致，不属于固定色禁令针对的情况。
+     */
     @Composable
-    override fun labelColor(textFieldInfo: TextFieldInfo): Color =
-        if (textFieldInfo.isStatusError) fieldError else fieldLabel
+    override fun backgroundBrush(textFieldInfo: TextFieldInfo): Brush =
+        SolidColor(Color.Transparent)
+
+    /** 输入区还有一层底色，需一并透明，否则行内会再叠一层 Background1。 */
+    @Composable
+    override fun textAreaBackgroundBrush(textFieldInfo: TextFieldInfo): StateBrush = StateBrush(
+        rest = SolidColor(Color.Transparent),
+        disabled = SolidColor(Color.Transparent)
+    )
+
+    @Composable
+    override fun labelColor(textFieldInfo: TextFieldInfo): Color = when {
+        textFieldInfo.isStatusError -> fieldError
+        textFieldInfo.isFocused -> fieldFocus
+        else -> fieldLabel
+    }
 
     @Composable
     override fun hintColor(textFieldInfo: TextFieldInfo): Color = fieldHint
@@ -750,8 +771,18 @@ private class AppTextFieldTokens(
     override fun cursorColor(textFieldInfo: TextFieldInfo): Brush = SolidColor(fieldCursor)
 
     @Composable
-    override fun dividerColor(textFieldInfo: TextFieldInfo): Brush =
-        SolidColor(if (textFieldInfo.isStatusError) fieldError else fieldDivider)
+    override fun dividerColor(textFieldInfo: TextFieldInfo): Brush = SolidColor(
+        when {
+            textFieldInfo.isStatusError -> fieldError
+            textFieldInfo.isFocused -> fieldFocus
+            else -> fieldDivider
+        }
+    )
+
+    /** Fluent 2 规范：下划线在聚焦或报错时加粗，静息态保持 1dp。 */
+    @Composable
+    override fun strokeWidth(textFieldInfo: TextFieldInfo): Dp =
+        if (textFieldInfo.isStatusError || textFieldInfo.isFocused) 2.dp else 1.dp
 }
 
 /**
@@ -766,14 +797,16 @@ private fun rememberAppTextFieldTokens(): TextFieldTokens {
     val hint = AppTheme.textHint
     val input = AppTheme.textPrimary
     val divider = AppTheme.stroke
+    val focus = AppTheme.brand
     val error = AppTheme.danger
-    return remember(label, hint, input, divider, error) {
+    return remember(label, hint, input, divider, focus, error) {
         AppTextFieldTokens(
             fieldLabel = label,
             fieldHint = hint,
             fieldInput = input,
             fieldCursor = input,
             fieldDivider = divider,
+            fieldFocus = focus,
             fieldError = error
         )
     }
