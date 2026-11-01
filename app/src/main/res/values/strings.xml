@@ -158,6 +158,19 @@
     <string name="reader_parse_warning">此记录未能完整解析，可查看原始数据。</string>
     <string name="reader_no_records">已识别标签，未读到 NDEF 内容。请重新贴近标签扫描。</string>
     <string name="reader_read_failed">读取未完成，请保持标签贴近手机背面后重试。</string>
+    <string name="record_open_web">访问网页</string>
+    <string name="record_open_application">打开应用</string>
+    <string name="record_connect_wifi">连接 Wi-Fi</string>
+    <string name="record_wifi_manual">复制密码并打开 Wi-Fi 设置</string>
+    <string name="record_connect_bluetooth">配对 / 连接蓝牙</string>
+    <string name="record_action_unavailable">无法执行此操作，请检查设备支持情况或系统设置。</string>
+    <string name="record_application_unavailable">未安装此应用，或该应用没有可打开的启动入口。</string>
+    <string name="record_wifi_saved">请在系统 Wi-Fi 页面确认网络状态并选择连接。</string>
+    <string name="record_wifi_manual_hint">此配置需要在系统中手动添加，密码已复制。</string>
+    <string name="record_bluetooth_unavailable">此设备不支持蓝牙。</string>
+    <string name="record_bluetooth_permission">需要附近设备权限才能按地址发起蓝牙配对。</string>
+    <string name="record_bluetooth_pairing">正在配对，请按系统提示操作；外设需要处于可配对状态。</string>
+    <string name="record_bluetooth_failed">无法发起配对，请确认外设已开启并处于可配对状态。</string>
 
     <string name="msg_nfc_available">该设备已启用 NFC 功能</string>
     <string name="msg_nfc_unavailable">该设备不支持 NFC 功能</string>
@@ -341,6 +354,10 @@
     <string name="p2p_label_received">接收到的消息</string>
     <string name="p2p_placeholder_waiting">等待接收消息…</string>
     <string name="p2p_button_send">发送</string>
+    <string name="p2p_received_summary">%1$d 条记录，共 %2$d 字节</string>
+    <string name="p2p_invalid_payload">收到的消息不是有效的 NDEF 数据，请确认两端使用支持统一记录格式的版本。</string>
+    <string name="p2p_payload_too_large">消息超过端对端单次传输上限（%1$d 字节），请减少内容。</string>
+    <string name="p2p_transfer_failed">记录消息传输失败或已取消，请保持连接后重试。</string>
 
     <!-- P2P - Toast / Snackbar -->
     <string name="toast_permission_required">请先授予位置和附近设备权限</string>

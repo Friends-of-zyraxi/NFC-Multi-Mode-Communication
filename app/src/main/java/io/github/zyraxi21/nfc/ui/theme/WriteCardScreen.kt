@@ -28,6 +28,9 @@ import io.github.zyraxi21.nfc.R
 import io.github.zyraxi21.nfc.util.MAX_EMULATED_NDEF_BYTES
 import io.github.zyraxi21.nfc.util.NfcWriteRecord
 import io.github.zyraxi21.nfc.util.createNfcWriteMessage
+import io.github.zyraxi21.nfc.util.NfcReadResult
+import io.github.zyraxi21.nfc.util.RecordAction
+import io.github.zyraxi21.nfc.util.MAX_NEARBY_NDEF_BYTES
 import kotlinx.coroutines.launch
 
 // =======================================================================
@@ -162,6 +165,22 @@ fun WriteCardScreen(
     onStartEmulation: (List<NfcWriteRecord>) -> Unit = {},
     onCancelWrite: () -> Unit = {},
 ) {
+    RecordEditorScreen(writeState, writeStatusMessage, onWriteRecords, onStartEmulation, onCancelWrite)
+}
+
+/** NFC 和 Nearby 共用类型、列表、校验及编辑状态，只有提交方式不同。 */
+@Composable
+internal fun RecordEditorScreen(
+    writeState: WriteState,
+    writeStatusMessage: String,
+    onWriteRecords: (List<NfcWriteRecord>) -> Unit,
+    onStartEmulation: (List<NfcWriteRecord>) -> Unit = {},
+    onCancelWrite: () -> Unit = {},
+    nearbyMode: Boolean = false,
+    receivedResult: NfcReadResult? = null,
+    onRecordAction: ((RecordAction) -> Unit)? = null,
+    headerContent: (@Composable () -> Unit)? = null,
+) {
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -177,7 +196,8 @@ fun WriteCardScreen(
             runCatching { createNfcWriteMessage(records) }.getOrNull()
         } else null
     }
-    val canWrite = writeState == WriteState.IDLE && message != null
+    val canWrite = writeState == WriteState.IDLE && message != null &&
+        (!nearbyMode || message.byteArrayLength <= MAX_NEARBY_NDEF_BYTES)
     val canEmulate = canWrite && message.byteArrayLength <= MAX_EMULATED_NDEF_BYTES
 
     fun update(draft: WriteRecordDraft) {
@@ -198,14 +218,21 @@ fun WriteCardScreen(
     ) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().testTag("write-records"),
+            modifier = Modifier.fillMaxSize().testTag(if (nearbyMode) "p2p-records" else "write-records"),
             contentPadding = PaddingValues(horizontal = LocalPageGutter.current, vertical = FluentSpacing.mPlus),
             verticalArrangement = Arrangement.spacedBy(FluentSpacing.mPlus),
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(FluentSpacing.s)) {
-                    FluentText(stringResource(R.string.title_write_card), FluentTextStyle.Title3,
+                    FluentText(stringResource(if (nearbyMode) R.string.p2p_title else R.string.title_write_card), FluentTextStyle.Title3,
                         modifier = Modifier.semantics { heading() })
+                }
+            }
+            headerContent?.let { item { it() } }
+            if (nearbyMode) {
+                item { NearbyReceivedHeading(receivedResult) }
+                itemsIndexed(receivedResult?.records.orEmpty(), key = { index, _ -> "received-$index" }) { index, record ->
+                    ReaderRecordCard(record, index, onRecordAction)
                 }
             }
             itemsIndexed(drafts, key = { _, draft -> draft.id }) { index, draft ->
@@ -295,17 +322,21 @@ fun WriteCardScreen(
                         else stringResource(R.string.write_records_summary, records.size, message.byteArrayLength),
                         FluentTextStyle.Caption1, color = AppTheme.textSecondary,
                     )
-                    if (message != null && message.byteArrayLength > MAX_EMULATED_NDEF_BYTES) {
+                    if (nearbyMode && message != null && message.byteArrayLength > MAX_NEARBY_NDEF_BYTES) {
+                        FluentText(stringResource(R.string.p2p_payload_too_large, MAX_NEARBY_NDEF_BYTES),
+                            FluentTextStyle.Caption1, color = AppTheme.danger)
+                    }
+                    if (!nearbyMode && message != null && message.byteArrayLength > MAX_EMULATED_NDEF_BYTES) {
                         FluentText(stringResource(R.string.write_emulation_too_large, MAX_EMULATED_NDEF_BYTES),
                             FluentTextStyle.Caption1, color = AppTheme.danger)
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
                         FluentButton(
-                            text = stringResource(R.string.button_write_tag), enabled = canWrite,
+                            text = stringResource(if (nearbyMode) R.string.p2p_button_send else R.string.button_write_tag), enabled = canWrite,
                             modifier = Modifier.weight(1f).heightIn(min = PageMetrics.minTouchTarget),
                             onClick = { focusManager.clearFocus(); onWriteRecords(records) },
                         )
-                        FluentButton(
+                        if (!nearbyMode) FluentButton(
                             text = stringResource(R.string.button_card_emulation), enabled = canEmulate,
                             modifier = Modifier.weight(1f).heightIn(min = PageMetrics.minTouchTarget),
                             onClick = { focusManager.clearFocus(); onStartEmulation(records) },

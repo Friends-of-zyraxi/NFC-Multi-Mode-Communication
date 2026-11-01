@@ -28,6 +28,7 @@
   - **应用记录 AAR**（`android.com:pkg`）及其他 MIME / 外部类型记录
 - 支持通过 IsoDep + 自定义 AID 回退读取 HCE 模拟卡内容
 - 每条记录独立显示，配置内容按字段排列；正文支持选择文字、展开长内容、单条复制和全部复制
+- 网址、应用、Wi-Fi 和蓝牙记录配有手动操作按钮；扫描本身只展示信息。Wi-Fi 经系统确认添加到已保存网络，再由用户在系统页面确认连接；蓝牙按 MAC 地址发起系统配对，已配对设备进入蓝牙设置，实际连接取决于外设服务
 - 标签 UID、通信技术、NDEF 容量、写入状态及原始载荷默认收起；原始载荷预览前 256 B，可复制完整数据
 - 展开标签信息可查看系统提供的标签类型、ATQA、SAK、芯片系列、物理容量及扇区布局、NDEF 存储格式与系统只读设置能力；不同技术还会显示 ISO-DEP、NFC-B、NFC-F 或 NFC-V 的发现参数。芯片系列按标签特征识别，缺失参数直接省略；物理容量与 NDEF 可用容量分别展示，未读到 NDEF 时仍可查看标签信息
 
@@ -38,8 +39,8 @@
 - 显示记录数和编码后的总字节数；任何一条记录无效时禁止提交，写入前检查标签实际容量，卡模拟最多支持 65,532 B 的 NDEF 消息
 - 编辑列表与待写入的完整消息可在 Activity 重建后恢复，取消操作后仍可继续编辑列表
 - 应用程序可从本机具有启动入口的应用列表中选择，支持按名称或包名搜索，也可手动填写包名（允许填写本机尚未安装的目标应用）
-- 应用程序使用标准 AAR（`android.com:pkg`）记录：退出本应用后扫描标签，由 Android 系统打开目标应用；在本应用读卡时只展示包名，不跳转
-- 网址使用标准 URI 记录；Wi-Fi 使用标准 WSC Configuration Token（开放、WPA-PSK、WPA2-PSK），蓝牙使用标准 BR/EDR OOB 配对记录。支持这些记录的扫描设备由系统处理打开网址、连接 Wi-Fi 或蓝牙配对，必要时由用户确认；本应用读卡只显示信息
+- 应用程序使用标准 AAR（`android.com:pkg`）记录：退出本应用后扫描标签，由 Android 系统打开目标应用；在本应用读卡时先展示包名，由用户点击按钮打开
+- 网址使用标准 URI 记录；Wi-Fi 使用标准 WSC Configuration Token（开放、WPA-PSK、WPA2-PSK），蓝牙使用标准 BR/EDR OOB 配对记录。支持这些记录的扫描设备由系统处理打开网址、连接 Wi-Fi 或蓝牙配对，必要时由用户确认；本应用内扫描先展示信息，外部操作需点击对应按钮
 - 自动适配标签类型：NDEF 标签直接写入；可格式化（NDEF Formatable）标签先格式化再写入
 - 完整的写入状态机弹窗：等待卡片 → 写入中 → 成功 / 失败
 - **卡模拟（HCE）**：模拟 NFC Forum Type 4 标签（NDEF Tag），另一台手机可用读卡功能直接读回
@@ -48,9 +49,10 @@
 ### 3. 端对端通信（P2P）
 
 - 基于 **Google Nearby Connections**（`P2P_CLUSTER` 策略）：一台设备广播、另一台发现并自动发起连接
-- 支持文本 / 网址 / Wi-Fi / 蓝牙四种消息格式（`TEXT:` / `URL:` / `WIFI:` / `BT:` 前缀协议）
+- 与读写卡共用文本、网址、Wi-Fi、蓝牙和应用程序五种类型，支持混合多记录编辑、删除、排序及本机应用选择；统一传输标准 NDEF 二进制消息，SSID、密码和正文中的分隔符及换行会完整保留
 - 完整连接状态机：断开 → 广播 / 发现 → 连接中 → 已连接 → 收发消息
-- 收到消息后自动解析并以友好格式展示
+- 收到消息后按 NDEF 记录分卡展示，支持复制、查看原始数据及手动访问网页、打开应用、连接 Wi-Fi 和蓝牙配对；断开连接后仍保留接收内容，重新建立连接时清除上一会话内容
+- 单次发送大小受当前 Nearby SDK 的 `ConnectionsClient.MAX_BYTES_DATA_SIZE` 限制；两端必须使用支持统一 NDEF 消息的版本，旧版文本前缀消息不再作为有效记录解析
 
 ---
 
@@ -171,6 +173,7 @@
 - 多记录 NDEF 消息不是操作脚本，系统不会依次执行全部记录。要明确触发网址、Wi-Fi 或蓝牙操作，建议单独写入对应类型的记录；混合标签中的应用记录也可能影响系统分发。
 - Wi-Fi WSC 记录（`application/vnd.wfa.wsc`）包含 Version 和 Credential，后者包含 Network Index、SSID、Authentication Type、Encryption Type、Network Key 和通配 MAC 地址；SSID 最多 32 个 UTF-8 字节，个人网络密码为 8—63 个可打印 ASCII 字符或 64 位十六进制密钥，开放网络使用空密码。WSC 没有本应用原先为 WPA3 定义的认证值，写卡表单已移除此选项，也不生成 WEP 配置。
 - 蓝牙 OOB 记录（`application/vnd.bluetooth.ep.oob`）按 [Bluetooth GAP 规范](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-60/out/en/host/generic-access-profile.html)使用小端总长度、反序 BD_ADDR 和 EIR Complete Local Name；名称可省略，最多 248 个 UTF-8 字节。Wi-Fi 和蓝牙的旧版自定义载荷不再作为有效标准配置解析，仍可查看原始数据。
+- 记录上的 Wi-Fi 按钮使用 [Android 系统添加网络接口](https://developer.android.com/develop/connectivity/wifi/wifi-save-network-passpoint-config)。64 位十六进制密钥及其他不受此接口直接支持的配置，改用“复制密码并打开 Wi-Fi 设置”；蓝牙按钮使用系统配对流程，不能保证任意外设自动建立业务连接。
 - Wi-Fi 密码、蓝牙 MAC 等数据以标准（未加密）格式存储在标签中，请勿在公共标签中写入敏感信息。
 - 卡模拟内容为只读模拟（Write Access = Never），读卡方无法修改。
 - 卡模拟读取协议自 2026-09 版起改为带偏移量的分块读取，**收发两端需安装同一版本**，跨版本可能取到错位数据。

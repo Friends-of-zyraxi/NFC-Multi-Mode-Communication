@@ -47,6 +47,7 @@ data class NfcReadRecord(
     val id: ByteArray,
     val details: List<NfcRecordField> = emptyList(),
     @param:StringRes val warningResId: Int? = null,
+    val actions: List<RecordAction> = emptyList(),
 ) {
     /** 单值记录直接复制原文；配置记录保留字段名，未知记录复制完整字节。 */
     fun copyText(context: Context): String = when {
@@ -97,6 +98,7 @@ private fun parseRecord(context: Context, record: NdefRecord): NfcReadRecord {
     }
     val fields = mutableListOf<NfcRecordField>()
     val details = mutableListOf<NfcRecordField>()
+    val actions = mutableListOf<RecordAction>()
     var warning: Int? = null
     try {
         when (kind) {
@@ -116,13 +118,17 @@ private fun parseRecord(context: Context, record: NdefRecord): NfcReadRecord {
             NfcRecordKind.URI -> {
                 val uri = requireNotNull(record.toUri())
                 fields += NfcRecordField(R.string.reader_field_uri, uri.toString())
+                if (uri.scheme?.lowercase() in listOf("http", "https") && !uri.host.isNullOrEmpty()) {
+                    actions += RecordAction.Web(uri.toString())
+                }
             }
             NfcRecordKind.APPLICATION -> {
                 val packageName = payload.decodeToString(throwOnInvalidSequence = true)
                 fields += NfcRecordField(R.string.reader_field_package, packageName, monospaced = true)
+                if (isValidApplicationPackageName(packageName)) actions += RecordAction.Application(packageName)
             }
             NfcRecordKind.WIFI -> {
-                val complete = parseWifiFields(context, payload, fields, details)
+                val complete = parseWifiFields(context, payload, fields, details, actions)
                 if (!complete || fields.isEmpty()) warning = R.string.reader_parse_warning
             }
             NfcRecordKind.BLUETOOTH -> {
@@ -162,6 +168,7 @@ private fun parseRecord(context: Context, record: NdefRecord): NfcReadRecord {
                 (completeName ?: shortName)?.takeIf { it.isNotEmpty() }?.let {
                     fields += NfcRecordField(R.string.reader_field_device, it)
                 }
+                actions += RecordAction.Bluetooth(payload.copyOfRange(2, 8).reversedArray().toDisplayHex(":"))
             }
             NfcRecordKind.DATA, NfcRecordKind.EMPTY -> Unit
         }
@@ -169,7 +176,8 @@ private fun parseRecord(context: Context, record: NdefRecord): NfcReadRecord {
         // 单条损坏记录不影响后面的记录；载荷仍可查看和完整复制。
         warning = R.string.reader_parse_warning
     }
-    return NfcReadRecord(kind, fields, payload, type, record.tnf, record.id, details, warning)
+    return NfcReadRecord(kind, fields, payload, type, record.tnf, record.id, details, warning,
+        if (warning == null) actions else emptyList())
 }
 
 /** 仅解析标准 Configuration Token 的 Credential，损坏数据保留已解出的字段与原始载荷。 */
@@ -178,6 +186,7 @@ private fun parseWifiFields(
     payload: ByteArray,
     fields: MutableList<NfcRecordField>,
     details: MutableList<NfcRecordField>,
+    actions: MutableList<RecordAction>,
 ): Boolean {
     var versionFound = false
     var credentialFound = false
@@ -191,7 +200,7 @@ private fun parseWifiFields(
             }
             0x100E -> {
                 credentialFound = true
-                if (!parseWifiCredential(context, data, fields, details)) credentialsComplete = false
+                if (!parseWifiCredential(context, data, fields, details, actions)) credentialsComplete = false
             }
         }
     }
@@ -203,9 +212,12 @@ private fun parseWifiCredential(
     payload: ByteArray,
     fields: MutableList<NfcRecordField>,
     details: MutableList<NfcRecordField>,
+    actions: MutableList<RecordAction>,
 ): Boolean {
     val found = mutableSetOf<Int>()
+    val attributes = mutableMapOf<Int, ByteArray>()
     val complete = parseWscAttributes(payload) { type, data ->
+        attributes[type] = data
         if (type in setOf(0x1026, 0x1045, 0x1003, 0x100F, 0x1027, 0x1020)) require(found.add(type))
         when (type) {
             0x1045 -> {
@@ -229,7 +241,15 @@ private fun parseWifiCredential(
             0x100E -> error("Credential cannot contain another Credential")
         }
     }
-    return complete && found.containsAll(setOf(0x1026, 0x1045, 0x1003, 0x100F, 0x1027, 0x1020))
+    val valid = complete && found.containsAll(setOf(0x1026, 0x1045, 0x1003, 0x100F, 0x1027, 0x1020))
+    if (valid) {
+        actions += RecordAction.Wifi(
+            attributes.getValue(0x1045).decodeToString(throwOnInvalidSequence = true),
+            attributes.getValue(0x1027).decodeToString(throwOnInvalidSequence = true),
+            attributes.getValue(0x1003).wscU16(), attributes.getValue(0x100F).wscU16(),
+        )
+    }
+    return valid
 }
 
 private fun ByteArray.wscU16(): Int {

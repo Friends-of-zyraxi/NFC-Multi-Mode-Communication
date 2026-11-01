@@ -47,12 +47,14 @@ import io.github.zyraxi21.nfc.util.NfcRecordField
 import io.github.zyraxi21.nfc.util.NfcRecordKind
 import io.github.zyraxi21.nfc.util.copyText
 import io.github.zyraxi21.nfc.util.toDisplayHex
+import io.github.zyraxi21.nfc.util.RecordAction
 
 /** 一次扫描对应一个结果快照；整页统一滚动，记录正文优先，协议细节按需展开。 */
 @Composable
 fun NFCReaderScreen(
     result: NfcReadResult?,
     isButtonVisible: Boolean,
+    onRecordAction: ((RecordAction) -> Unit)? = null,
     onCheckNfcClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -142,7 +144,7 @@ fun NFCReaderScreen(
                     }
                 }
                 itemsIndexed(result.records, key = { index, _ -> index }) { index, record ->
-                    ReaderRecordCard(record, index)
+                    ReaderRecordCard(record, index, onRecordAction)
                 }
             }
         }
@@ -171,7 +173,7 @@ private fun ReaderScanPrompt() {
 }
 
 @Composable
-private fun ReaderRecordCard(record: NfcReadRecord, index: Int) {
+internal fun ReaderRecordCard(record: NfcReadRecord, index: Int, onRecordAction: ((RecordAction) -> Unit)? = null) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     var rawExpanded by rememberSaveable { mutableStateOf(false) }
@@ -212,6 +214,7 @@ private fun ReaderRecordCard(record: NfcReadRecord, index: Int) {
             record.warningResId?.let {
                 FluentText(stringResource(it), FluentTextStyle.Body2, centered = false, color = AppTheme.danger)
             }
+            RecordActionButtons(record.actions, onRecordAction)
             ReaderAction(
                 stringResource(if (rawExpanded) R.string.reader_raw_hide else R.string.reader_raw_show),
                 Modifier.testTag("reader-raw-toggle-$index"),

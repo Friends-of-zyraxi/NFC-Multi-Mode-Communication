@@ -39,6 +39,10 @@ import io.github.zyraxi21.nfc.ui.theme.NFCReaderScreen
 import io.github.zyraxi21.nfc.ui.theme.P2PScreen
 import io.github.zyraxi21.nfc.ui.theme.WriteCardScreen
 import io.github.zyraxi21.nfc.ui.theme.WriteState
+import io.github.zyraxi21.nfc.ui.theme.rememberRecordActionHandler
+import io.github.zyraxi21.nfc.util.createNearbyPayload
+import io.github.zyraxi21.nfc.util.parseNearbyPayload
+import io.github.zyraxi21.nfc.util.MAX_NEARBY_NDEF_BYTES
 import io.github.zyraxi21.nfc.util.NfcReadResult
 import io.github.zyraxi21.nfc.util.parseNfcReadResult
 import io.github.zyraxi21.nfc.util.HceDataStore
@@ -53,7 +57,6 @@ import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import kotlin.time.Duration.Companion.seconds
-import java.nio.charset.StandardCharsets
 
 class MainActivity : ComponentActivity() {
 
@@ -82,9 +85,9 @@ class MainActivity : ComponentActivity() {
 
     // P2P通信相关状态变量
     private var p2pConnectionState by mutableStateOf(ConnectionState.DISCONNECTED)
-    private var receivedNearbyMessage by mutableStateOf("")
-    private var messageToSend by mutableStateOf("")
+    private var receivedNearbyResult by mutableStateOf<NfcReadResult?>(null)
     private var currentEndpointId: String? = null
+    private val outgoingNearbyPayloads = mutableSetOf<Long>()
     private var isBluetoothEnabled by mutableStateOf(false)
     private var isWiFiEnabled by mutableStateOf(false)
 
@@ -199,6 +202,7 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme {
                 val coroutineScope = rememberCoroutineScope()
                 snackbarHostState = remember { SnackbarState() }
+                val recordActionHandler = rememberRecordActionHandler { showSnackbar(it) }
 
                 // ---- App 级 NFC 自检：启动时检查一次，正常则静默隐藏按钮 ----
                 var nfcChecked by remember { mutableStateOf(false) }
@@ -251,6 +255,7 @@ class MainActivity : ComponentActivity() {
                         NFCReaderScreen(
                             result = readerResult,
                             isButtonVisible = isReaderButtonVisible,
+                            onRecordAction = recordActionHandler,
                             onCheckNfcClick = {
                                 checkNfcAvailability { messageRes, actionRes, action ->
                                     coroutineScope.launch {
@@ -316,11 +321,10 @@ class MainActivity : ComponentActivity() {
                     p2pScreen = {
                         P2PScreen(
                             connectionState = p2pConnectionState,
-                            receivedNearbyMessage = receivedNearbyMessage,
+                            receivedResult = receivedNearbyResult,
                             isBluetoothEnabled = isBluetoothEnabled,
                             isWiFiEnabled = isWiFiEnabled,
                             nearbyRadioWarning = nearbyRadioWarning,
-                            onMessageChange = { messageToSend = it },
                             onEnableBluetooth = { openBluetoothSettings() },
                             onEnableWiFi = { openWifiSettings() },
                             onStartAdvertising = { startAdvertising() },
@@ -328,15 +332,16 @@ class MainActivity : ComponentActivity() {
                             onStartDiscovery = { startDiscovery() },
                             onStopDiscovery = { stopDiscovery() },
                             onDisconnect = { disconnectFromEndpoint() },
-                            onSendMessage = { message ->
+                            onSendRecords = { records ->
                                 if (currentEndpointId != null && p2pConnectionState == ConnectionState.CONNECTED) {
-                                    sendNearbyMessage(currentEndpointId!!, message)
+                                    sendNearbyRecords(currentEndpointId!!, records)
                                 } else {
                                     showToast(getString(R.string.toast_not_connected))
                                 }
                             },
                             hasPermissions = hasNearbyPermissions,
-                            onRequestPermissions = { permLauncher.launch(nearbyPermissions) }
+                            onRequestPermissions = { permLauncher.launch(nearbyPermissions) },
+                            onRecordAction = recordActionHandler,
                         )
                     },
                     snackbarHostState = snackbarHostState
@@ -507,6 +512,7 @@ class MainActivity : ComponentActivity() {
                     Log.d("Nearby", "连接成功: $endpointId")
                     p2pConnectionState = ConnectionState.CONNECTED
                     currentEndpointId = endpointId
+                    receivedNearbyResult = null
                     showToast(getString(R.string.toast_connection_success))
                 }
                 ConnectionsStatusCodes.STATUS_CONNECTION_REJECTED -> {
@@ -531,6 +537,7 @@ class MainActivity : ComponentActivity() {
             Log.d("Nearby", "连接断开: $endpointId")
             p2pConnectionState = ConnectionState.DISCONNECTED
             currentEndpointId = null
+            outgoingNearbyPayloads.clear()
             showSnackbar(getString(R.string.toast_connection_disconnected))
         }
     }
@@ -538,15 +545,23 @@ class MainActivity : ComponentActivity() {
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             payload.asBytes()?.let { bytes ->
-                val message = String(bytes, StandardCharsets.UTF_8)
-                receivedNearbyMessage = message
-                Log.d("Nearby", "收到消息: $message")
+                val result = parseNearbyPayload(this@MainActivity, bytes)
+                runOnUiThread {
+                    if (currentEndpointId == endpointId) receivedNearbyResult = result
+                }
             }
         }
 
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
-            // 您可以在此处理传输进度，例如显示进度条
-            Log.d("Nearby", "数据传输更新: $update")
+            runOnUiThread {
+                when (update.status) {
+                    PayloadTransferUpdate.Status.SUCCESS -> if (outgoingNearbyPayloads.remove(update.payloadId)) {
+                        showToast(getString(R.string.toast_message_sent))
+                    }
+                    PayloadTransferUpdate.Status.FAILURE, PayloadTransferUpdate.Status.CANCELED ->
+                        if (outgoingNearbyPayloads.remove(update.payloadId)) showToast(getString(R.string.p2p_transfer_failed))
+                }
+            }
         }
     }
 
@@ -691,14 +706,24 @@ class MainActivity : ComponentActivity() {
     }
 
     // 发送Nearby Connections消息
-    private fun sendNearbyMessage(endpointId: String, message: String) {
-        val payload = Payload.fromBytes(message.toByteArray(StandardCharsets.UTF_8))
+    private fun sendNearbyRecords(endpointId: String, records: List<NfcWriteRecord>) {
+        val bytes = try {
+            createNearbyPayload(records)
+        } catch (error: InvalidWriteRecordException) {
+            showToast(getString(error.errorResId))
+            return
+        } catch (_: Exception) {
+            showToast(getString(R.string.p2p_payload_too_large, MAX_NEARBY_NDEF_BYTES))
+            return
+        }
+        val payload = Payload.fromBytes(bytes)
+        outgoingNearbyPayloads += payload.id
         connectionsClient.sendPayload(endpointId, payload)
             .addOnSuccessListener {
-                showToast(getString(R.string.toast_message_sent))
-                Log.d("Nearby", "消息发送成功")
+                Log.d("Nearby", "记录消息已提交发送")
             }
             .addOnFailureListener { e ->
+                outgoingNearbyPayloads.remove(payload.id)
                 showToast(getString(R.string.format_message_send_failed, e.message))
                 Log.e("Nearby", "消息发送失败", e)
             }
@@ -709,6 +734,7 @@ class MainActivity : ComponentActivity() {
         connectionsClient.stopAllEndpoints()
         p2pConnectionState = ConnectionState.DISCONNECTED
         currentEndpointId = null
+        outgoingNearbyPayloads.clear()
     }
 
     // 发起Nearby Connections连接请求
