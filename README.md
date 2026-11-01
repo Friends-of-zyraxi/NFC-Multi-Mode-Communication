@@ -193,6 +193,8 @@
 
 ### 第三方依赖
 
+底部导航使用 [Microsoft Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) 的 MIT 许可矢量图标，来源及许可证见 [third_party/fluentui-system-icons](third_party/fluentui-system-icons/README.md)。
+
 构建时引用的第三方组件及其许可证：
 
 | 依赖 | 许可证 |
@@ -204,4 +206,4 @@
 | Kotlin 标准库 | Apache-2.0 |
 | Google Play services — Nearby Connections | 闭源专有，受 [Google APIs 服务条款](https://developers.google.com/terms) 约束 |
 
-除 Nearby Connections 外的组件均为 Apache-2.0，与 GPLv3 兼容。Nearby Connections 属于闭源专有组件，不在本项目源码的许可范围内，其使用需另行遵守 Google 的条款。
+上表中除 Nearby Connections 外的组件均为 Apache-2.0，与 GPLv3 兼容。Nearby Connections 属于闭源专有组件，不在本项目源码的许可范围内，其使用需另行遵守 Google 的条款。

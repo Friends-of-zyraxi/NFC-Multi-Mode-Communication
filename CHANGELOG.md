@@ -15,6 +15,7 @@
 
 ### 变更
 
+- 底部导航图标统一为 Microsoft Fluent UI System Icons，读卡、写卡和端对端通信分别使用 Tag、Edit 和 Arrow Swap，未选中使用 Regular，选中使用 Filled
 - Wi-Fi 标签统一写入标准 WSC Configuration Token，蓝牙标签统一写入标准 BR/EDR OOB 数据，移除旧载荷格式的解析兼容；网址继续使用标准 URI 记录，交由扫描设备的系统处理打开、连接或配对确认，本应用读卡仅展示信息
 - Wi-Fi 表单支持开放、WPA-PSK 和 WPA2-PSK 网络，开放网络自动使用空密码；按协议校验 SSID、密钥和蓝牙设备名称，移除没有对应 WSC 值的 WPA3 选项，并提示多记录不按顺序执行操作
 - 开发版禁用整套应用内更新功能，关于面板仅提示手动安装；检查、下载恢复、下载和安装入口以及安装权限仅在正式版提供

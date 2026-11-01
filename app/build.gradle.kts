@@ -113,10 +113,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.material3)
-    // Material 2 Compose：NavigationView 的 Icons.Default.* 来自它带入的
-    // material-icons-core。涟漪已改用 Material3 的 ripple()，不再需要 M2 的
-    // rememberRipple（那个 API 在 1.7 起已废弃）。
-    implementation(libs.androidx.compose.material)
 
     // Nearby Connections
     implementation(libs.play.services.nearby)

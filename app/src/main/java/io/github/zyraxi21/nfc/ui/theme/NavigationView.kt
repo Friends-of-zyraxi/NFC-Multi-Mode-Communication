@@ -6,10 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Email
+import androidx.annotation.DrawableRes
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -28,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -42,11 +40,12 @@ import kotlinx.coroutines.launch
 
 enum class NavigationItem(
     val titleResId: Int,
-    val icon: ImageVector
+    @param:DrawableRes val regularIconResId: Int,
+    @param:DrawableRes val selectedIconResId: Int,
 ) {
-    READ(R.string.nav_read, Icons.Default.Email),
-    WRITE(R.string.nav_write, Icons.Default.Edit),
-    P2P(R.string.nav_p2p, Icons.Default.Call)
+    READ(R.string.nav_read, R.drawable.ic_fluent_tag_24_regular, R.drawable.ic_fluent_tag_24_filled),
+    WRITE(R.string.nav_write, R.drawable.ic_fluent_edit_24_regular, R.drawable.ic_fluent_edit_24_filled),
+    P2P(R.string.nav_p2p, R.drawable.ic_fluent_arrow_swap_24_regular, R.drawable.ic_fluent_arrow_swap_24_filled)
 }
 
 /**
@@ -257,7 +256,7 @@ private fun AppBottomBar(
             tabs.forEachIndexed { index, item ->
                 BottomTab(
                     title = stringResource(item.titleResId),
-                    icon = item.icon,
+                    icon = ImageVector.vectorResource(if (index == selectedIndex) item.selectedIconResId else item.regularIconResId),
                     selected = index == selectedIndex,
                     onClick = { onSelect(index) },
                     modifier = Modifier
@@ -285,7 +284,7 @@ private fun AppBottomBar(
 @Composable
 private fun BottomTab(
     title: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
