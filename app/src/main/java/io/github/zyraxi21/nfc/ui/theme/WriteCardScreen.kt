@@ -1,24 +1,34 @@
 package io.github.zyraxi21.nfc.ui.theme
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.microsoft.fluentui.theme.token.controlTokens.ButtonStyle
 import com.microsoft.fluentui.tokenized.progress.CircularProgressIndicator
 import io.github.zyraxi21.nfc.R
-import io.github.zyraxi21.nfc.util.isValidApplicationPackageName
+import io.github.zyraxi21.nfc.util.MAX_EMULATED_NDEF_BYTES
+import io.github.zyraxi21.nfc.util.NfcWriteRecord
+import io.github.zyraxi21.nfc.util.createNfcWriteMessage
+import kotlinx.coroutines.launch
 
 // =======================================================================
 // 写入状态：由 MainActivity 驱动，控制弹窗显示
@@ -94,417 +104,357 @@ object FormDefaults {
 }
 
 
-// =======================================================================
-// 统一的写卡界面
-// =======================================================================
+private data class WriteRecordDraft(
+    val id: Long,
+    val type: WriteDataType = WriteDataType.TEXT,
+    val textInput: String = "",
+    val wifiSsid: String = "",
+    val wifiPassword: String = "",
+    val wifiEncryption: WifiEncryption = WifiEncryption.AES,
+    val wifiAuth: WifiAuth = WifiAuth.WPA2_PSK,
+    val btMac: String = "",
+    val btName: String = "",
+    val applicationPackageName: String = "",
+) {
+    fun toRecord(): NfcWriteRecord = when (type) {
+        WriteDataType.TEXT -> NfcWriteRecord.Text(textInput.ifBlank { FormDefaults.TEXT })
+        WriteDataType.URL -> NfcWriteRecord.Link(textInput.ifBlank { FormDefaults.URL }.trim())
+        WriteDataType.WIFI -> NfcWriteRecord.Wifi(
+            FormDefaults.resolveWifiSsid(wifiSsid), FormDefaults.resolveWifiPassword(wifiPassword),
+            wifiEncryption, wifiAuth,
+        )
+        WriteDataType.BLUETOOTH -> FormDefaults.resolveBluetooth(btMac, btName).let { (mac, name) ->
+            NfcWriteRecord.Bluetooth(mac.trim(), name)
+        }
+        WriteDataType.APPLICATION -> NfcWriteRecord.Application(applicationPackageName.trim())
+    }
+
+    fun summary(): String = when (val record = toRecord()) {
+        is NfcWriteRecord.Text -> record.text
+        is NfcWriteRecord.Link -> record.uri
+        is NfcWriteRecord.Wifi -> record.ssid
+        is NfcWriteRecord.Bluetooth -> record.mac + "\n" + record.name
+        is NfcWriteRecord.Application -> record.packageName
+    }
+}
+
+/** 只保存基本类型，切换页面或重建 Activity 后仍保留每条记录及其顺序。 */
+private val writeRecordsSaver = listSaver<List<WriteRecordDraft>, ArrayList<String>>(
+    save = { records ->
+        records.map {
+            arrayListOf(it.id.toString(), it.type.name, it.textInput, it.wifiSsid, it.wifiPassword,
+                it.wifiEncryption.name, it.wifiAuth.name, it.btMac, it.btName, it.applicationPackageName)
+        }
+    },
+    restore = { records ->
+        records.map {
+            WriteRecordDraft(it[0].toLong(), WriteDataType.valueOf(it[1]), it[2], it[3], it[4],
+                WifiEncryption.valueOf(it[5]), WifiAuth.valueOf(it[6]), it[7], it[8], it[9])
+        }
+    },
+)
+
+/** 同一份有序记录列表用于标签写入和 HCE，当前展开的表单也直接参与提交。 */
 @Composable
 fun WriteCardScreen(
     writeState: WriteState,
     writeStatusMessage: String,
-    onWriteText: (String) -> Unit,
-    onWriteUrl: (String) -> Unit,
-    onWriteWifi: (ssid: String, password: String, encryption: WifiEncryption, auth: WifiAuth) -> Unit,
-    onWriteBluetooth: (mac: String, name: String) -> Unit,
-    onWriteApplication: (packageName: String) -> Unit = {},
-    onStartEmulation: (
-        type: WriteDataType, textInput: String,
-        wifiSsid: String, wifiPassword: String,
-        wifiEncryption: WifiEncryption, wifiAuth: WifiAuth,
-        btMac: String, btName: String,
-        applicationPackageName: String
-    ) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
-    onCancelWrite: () -> Unit = {}
+    onWriteRecords: (List<NfcWriteRecord>) -> Unit,
+    onStartEmulation: (List<NfcWriteRecord>) -> Unit = {},
+    onCancelWrite: () -> Unit = {},
 ) {
     val focusManager = LocalFocusManager.current
-    var selectedType by remember { mutableStateOf(WriteDataType.TEXT) }
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    var drafts by rememberSaveable(stateSaver = writeRecordsSaver) {
+        mutableStateOf(listOf(WriteRecordDraft(id = 1)))
+    }
+    var nextId by rememberSaveable { mutableLongStateOf(2) }
+    var expandedId by rememberSaveable { mutableStateOf<Long?>(1) }
+    var pickerRecordId by remember { mutableStateOf<Long?>(null) }
+    val records = remember(drafts) { drafts.map { it.toRecord() } }
+    val message = remember(records) {
+        if (records.isNotEmpty() && records.all { it.validationError() == null }) {
+            runCatching { createNfcWriteMessage(records) }.getOrNull()
+        } else null
+    }
+    val canWrite = writeState == WriteState.IDLE && message != null
+    val canEmulate = canWrite && message.byteArrayLength <= MAX_EMULATED_NDEF_BYTES
 
-    // ----- 文本/网址 公共输入 -----
-    var textInput by remember { mutableStateOf("") }
-
-    // ----- Wi-Fi 表单 -----
-    var wifiSsid by remember { mutableStateOf("") }
-    var wifiPassword by remember { mutableStateOf("") }
-    var wifiEncryption by remember { mutableStateOf(WifiEncryption.AES) }
-    var wifiAuth by remember { mutableStateOf(WifiAuth.WPA2_PSK) }
-
-    // ----- 蓝牙表单 -----
-    var btMac by remember { mutableStateOf("") }
-    var btName by remember { mutableStateOf("") }
-
-    // ----- 应用程序表单 -----
-    var applicationPackageName by remember { mutableStateOf("") }
-    var applicationPickerVisible by remember { mutableStateOf(false) }
-    val validApplicationPackage = isValidApplicationPackageName(applicationPackageName)
-    val canSubmit = writeState == WriteState.IDLE &&
-        (selectedType != WriteDataType.APPLICATION || validApplicationPackage)
-
-    // 切换类型时清空输入
-    LaunchedEffect(selectedType) {
-        textInput = ""
-        wifiSsid = ""
-        wifiPassword = ""
-        btMac = ""
-        btName = ""
-        applicationPackageName = ""
-        applicationPickerVisible = false
+    fun update(draft: WriteRecordDraft) {
+        drafts = drafts.map { if (it.id == draft.id) draft else it }
+    }
+    fun move(id: Long, delta: Int) {
+        val from = drafts.indexOfFirst { it.id == id }
+        val target = from + delta
+        if (from < 0 || target !in drafts.indices) return
+        drafts = drafts.toMutableList().apply { add(target, removeAt(from)) }
+        scope.launch { listState.animateScrollToItem(target + 1) }
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() }
-            ) { focusManager.clearFocus() }
+        Modifier.fillMaxSize().pointerInput(Unit) {
+            detectTapGestures(onTap = { focusManager.clearFocus() })
+        }
     ) {
-        PageColumn(verticalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
-            // ---- 标题 ----
-            FluentText(
-                text = stringResource(R.string.title_write_card),
-                style = FluentTextStyle.Title3
-            )
-
-            // ---- 类型选择下拉框（浮层宽度与按钮对齐） ----
-            var typeExpanded by remember { mutableStateOf(false) }
-            FluentDropdown(
-                text = stringResource(R.string.format_type_label, stringResource(selectedType.labelResId)),
-                expanded = typeExpanded,
-                onExpandedChange = { typeExpanded = it },
-                options = WriteDataType.entries.map { stringResource(it.labelResId) },
-                onOptionSelected = { index ->
-                    selectedType = WriteDataType.entries[index]
-                    typeExpanded = false
-                }
-            )
-
-            // ---- 动态输入区域 ----
-            when (selectedType) {
-                WriteDataType.TEXT -> {
-                    FluentTextField(
-                        value = textInput,
-                        onValueChange = { textInput = it },
-                        label = stringResource(R.string.label_text_content),
-                        hintText = FormDefaults.TEXT
-                    )
-                    FluentText(
-                        text = stringResource(R.string.hint_text_format),
-                        style = FluentTextStyle.Caption1,
-                        color = AppTheme.textHint
-                    )
-                }
-
-                WriteDataType.URL -> {
-                    FluentTextField(
-                        value = textInput,
-                        onValueChange = { textInput = it },
-                        label = stringResource(R.string.label_url_input),
-                        hintText = FormDefaults.URL
-                    )
-                    FluentText(
-                        text = stringResource(R.string.hint_url_format),
-                        style = FluentTextStyle.Caption1,
-                        color = AppTheme.textHint
-                    )
-                }
-
-                WriteDataType.WIFI -> {
-                    FluentTextField(
-                        value = wifiSsid,
-                        onValueChange = { wifiSsid = it },
-                        label = stringResource(R.string.label_wifi_ssid),
-                        hintText = FormDefaults.WIFI_SSID
-                    )
-                    FluentTextField(
-                        value = wifiPassword,
-                        onValueChange = { wifiPassword = it },
-                        label = stringResource(R.string.label_wifi_password),
-                        hintText = FormDefaults.WIFI_PASSWORD
-                    )
-
-                    // 加密类型下拉
-                    var encExpanded by remember { mutableStateOf(false) }
-                    FluentDropdown(
-                        text = stringResource(R.string.label_encryption_type) + ": " + stringResource(wifiEncryption.displayResId),
-                        expanded = encExpanded,
-                        onExpandedChange = { encExpanded = it },
-                        options = WifiEncryption.entries.map { stringResource(it.displayResId) },
-                        onOptionSelected = { index ->
-                            wifiEncryption = WifiEncryption.entries[index]
-                            encExpanded = false
-                        }
-                    )
-
-                    // 认证类型下拉
-                    var authExpanded by remember { mutableStateOf(false) }
-                    FluentDropdown(
-                        text = stringResource(R.string.label_auth_type) + ": " + stringResource(wifiAuth.displayResId),
-                        expanded = authExpanded,
-                        onExpandedChange = { authExpanded = it },
-                        options = WifiAuth.entries.map { stringResource(it.displayResId) },
-                        onOptionSelected = { index ->
-                            wifiAuth = WifiAuth.entries[index]
-                            authExpanded = false
-                        }
-                    )
-                }
-
-                WriteDataType.BLUETOOTH -> {
-                    FluentTextField(
-                        value = btMac,
-                        onValueChange = { btMac = it },
-                        label = stringResource(R.string.label_bt_mac),
-                        hintText = FormDefaults.BT_MAC
-                    )
-                    FluentTextField(
-                        value = btName,
-                        onValueChange = { btName = it },
-                        label = stringResource(R.string.label_bt_name),
-                        hintText = FormDefaults.BT_NAME
-                    )
-                    FluentText(
-                        text = stringResource(R.string.hint_bt_format),
-                        style = FluentTextStyle.Caption1,
-                        color = AppTheme.textHint
-                    )
-                }
-
-                WriteDataType.APPLICATION -> {
-                    FluentButton(
-                        onClick = {
-                            focusManager.clearFocus()
-                            applicationPickerVisible = true
-                        },
-                        text = stringResource(R.string.button_select_application),
-                        style = ButtonStyle.OutlinedButton,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = PageMetrics.minTouchTarget)
-                    )
-                    FluentTextField(
-                        value = applicationPackageName,
-                        onValueChange = { applicationPackageName = it },
-                        label = stringResource(R.string.label_application_package),
-                        hintText = stringResource(R.string.placeholder_application_package)
-                    )
-                    if (applicationPackageName.isNotBlank() && !validApplicationPackage) {
-                        FluentText(
-                            text = stringResource(R.string.error_application_package),
-                            style = FluentTextStyle.Caption1,
-                            color = AppTheme.danger
-                        )
-                    }
-                    FluentText(
-                        text = stringResource(R.string.hint_application_format),
-                        style = FluentTextStyle.Caption1,
-                        color = AppTheme.textHint
-                    )
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().testTag("write-records"),
+            contentPadding = PaddingValues(horizontal = LocalPageGutter.current, vertical = FluentSpacing.mPlus),
+            verticalArrangement = Arrangement.spacedBy(FluentSpacing.mPlus),
+        ) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(FluentSpacing.s)) {
+                    FluentText(stringResource(R.string.title_write_card), FluentTextStyle.Title3,
+                        modifier = Modifier.semantics { heading() })
                 }
             }
-
-            Spacer(modifier = Modifier.height(FluentSpacing.s))
-
-            // ---- 写入标签 + 卡模拟 按钮（并列） ----
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m)
-            ) {
-                FluentButton(
-                    onClick = {
-                        when (selectedType) {
-                            WriteDataType.TEXT -> onWriteText(textInput.ifBlank { FormDefaults.TEXT })
-                            WriteDataType.URL -> onWriteUrl(textInput.ifBlank { FormDefaults.URL })
-                            WriteDataType.WIFI -> onWriteWifi(
-                                FormDefaults.resolveWifiSsid(wifiSsid),
-                                FormDefaults.resolveWifiPassword(wifiPassword),
-                                wifiEncryption, wifiAuth
-                            )
-                            WriteDataType.BLUETOOTH -> {
-                                val (mac, name) = FormDefaults.resolveBluetooth(btMac, btName)
-                                onWriteBluetooth(mac, name)
-                            }
-                            WriteDataType.APPLICATION -> onWriteApplication(applicationPackageName.trim())
-                        }
-                    },
-                    text = stringResource(R.string.button_write_tag),
-                    enabled = canSubmit,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = PageMetrics.minTouchTarget)
-                )
-
-                FluentButton(
-                    onClick = {
-                        val resolvedText = textInput.ifBlank {
-                            if (selectedType == WriteDataType.URL) FormDefaults.URL else FormDefaults.TEXT
-                        }
-                        val resolvedSsid = FormDefaults.resolveWifiSsid(wifiSsid)
-                        val resolvedPass = FormDefaults.resolveWifiPassword(wifiPassword)
-                        val (resolvedMac, resolvedName) = FormDefaults.resolveBluetooth(btMac, btName)
-                        onStartEmulation(
-                            selectedType, resolvedText,
-                            resolvedSsid, resolvedPass, wifiEncryption, wifiAuth,
-                            resolvedMac, resolvedName,
-                            applicationPackageName.trim()
-                        )
-                    },
-                    text = stringResource(R.string.button_card_emulation),
-                    enabled = canSubmit,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = PageMetrics.minTouchTarget)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(FluentSpacing.s))
-        }
-
-        if (applicationPickerVisible) {
-            ApplicationPickerDialog(
-                onApplicationSelected = {
-                    applicationPackageName = it.packageName
-                    applicationPickerVisible = false
-                },
-                onDismissRequest = { applicationPickerVisible = false }
-            )
-        }
-
-        // ================================================================
-        // 写入/模拟状态弹窗
-        // ================================================================
-        if (writeState != WriteState.IDLE) {
-            Dialog(
-                onDismissRequest = { },
-                properties = DialogProperties(
-                    dismissOnBackPress = false,
-                    dismissOnClickOutside = false
-                )
-            ) {
-                FluentCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(FluentSpacing.mPlus)
-                ) {
+            itemsIndexed(drafts, key = { _, draft -> draft.id }) { index, draft ->
+                val expanded = expandedId == draft.id
+                FluentCard(Modifier.fillMaxWidth().testTag("write-record-" + draft.id)) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(FluentSpacing.xl),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        Modifier.fillMaxWidth().padding(FluentSpacing.mPlus),
+                        verticalArrangement = Arrangement.spacedBy(FluentSpacing.m),
                     ) {
-                        when (writeState) {
-                            WriteState.WAITING_FOR_CARD -> {
-                                CircularProgressIndicator()
-                                Spacer(modifier = Modifier.height(FluentSpacing.mPlus))
-                                FluentText(
-                                    text = writeStatusMessage.ifEmpty { stringResource(R.string.dialog_tap_card) },
-                                    style = FluentTextStyle.Body1
-                                )
-                                Spacer(modifier = Modifier.height(FluentSpacing.mPlus))
-                                FluentButton(
-                                    onClick = onCancelWrite,
-                                    style = ButtonStyle.TextButton,
-                                    text = stringResource(R.string.button_cancel),
-                                    modifier = Modifier.heightIn(min = PageMetrics.minTouchTarget)
-                                )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            FluentText(
+                                stringResource(R.string.write_record_title, index + 1, stringResource(draft.type.labelResId)),
+                                FluentTextStyle.Body1Strong, centered = false,
+                                modifier = Modifier.weight(1f).semantics { heading() },
+                            )
+                            FluentButton(
+                                text = stringResource(if (expanded) R.string.write_collapse_record else R.string.write_edit_record),
+                                style = ButtonStyle.TextButton,
+                                modifier = Modifier.heightIn(min = PageMetrics.minTouchTarget).testTag("write-edit-" + draft.id),
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    expandedId = if (expanded) null else draft.id
+                                    if (!expanded) scope.launch { listState.animateScrollToItem(index + 1) }
+                                },
+                            )
+                        }
+                        if (expanded) {
+                            WriteRecordEditor(draft, onChange = ::update, onPickApplication = {
+                                focusManager.clearFocus()
+                                pickerRecordId = draft.id
+                            })
+                        } else {
+                            FluentText(
+                                draft.summary().ifEmpty { stringResource(R.string.write_records_incomplete) },
+                                FluentTextStyle.Body2, color = AppTheme.textSecondary,
+                                centered = false, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            )
+                            if (draft.toRecord().validationError() != null) {
+                                FluentText(stringResource(R.string.write_record_invalid), FluentTextStyle.Caption1,
+                                    color = AppTheme.danger, centered = false)
                             }
-
-                            WriteState.WRITING -> {
-                                CircularProgressIndicator()
-                                Spacer(modifier = Modifier.height(FluentSpacing.mPlus))
-                                FluentText(
-                                    text = stringResource(R.string.dialog_writing),
-                                    style = FluentTextStyle.Body1
-                                )
-                            }
-
-                            WriteState.SUCCESS -> {
-                                FluentText(
-                                    text = writeStatusMessage.ifEmpty { stringResource(R.string.dialog_write_success) },
-                                    style = FluentTextStyle.Body1Strong,
-                                    color = AppTheme.success
-                                )
-                            }
-
-                            WriteState.FAILED -> {
-                                FluentText(
-                                    text = writeStatusMessage.ifEmpty { stringResource(R.string.dialog_write_failed) },
-                                    style = FluentTextStyle.Body1Strong,
-                                    color = AppTheme.danger
-                                )
-                            }
-
-                            WriteState.EMULATING -> {
-                                CircularProgressIndicator()
-                                Spacer(modifier = Modifier.height(FluentSpacing.mPlus))
-                                FluentText(
-                                    text = stringResource(R.string.dialog_emulation_started),
-                                    style = FluentTextStyle.Body1Strong
-                                )
-                                Spacer(modifier = Modifier.height(FluentSpacing.s))
-                                FluentText(
-                                    text = stringResource(R.string.dialog_approach_reader),
-                                    style = FluentTextStyle.Body2,
-                                    color = AppTheme.textHint
-                                )
-                                Spacer(modifier = Modifier.height(FluentSpacing.mPlus))
-                                FluentButton(
-                                    onClick = onCancelWrite,
-                                    style = ButtonStyle.TextButton,
-                                    text = stringResource(R.string.dialog_button_stop_emulation),
-                                    modifier = Modifier.heightIn(min = PageMetrics.minTouchTarget)
-                                )
-                            }
-
-                            WriteState.IDLE -> { /* unreachable */ }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FluentSpacing.xs)) {
+                            FluentButton(
+                                text = stringResource(R.string.write_move_up), style = ButtonStyle.TextButton,
+                                enabled = index > 0, modifier = Modifier.weight(1f).heightIn(min = PageMetrics.minTouchTarget).testTag("write-up-" + draft.id),
+                                onClick = { move(draft.id, -1) },
+                            )
+                            FluentButton(
+                                text = stringResource(R.string.write_move_down), style = ButtonStyle.TextButton,
+                                enabled = index < drafts.lastIndex, modifier = Modifier.weight(1f).heightIn(min = PageMetrics.minTouchTarget).testTag("write-down-" + draft.id),
+                                onClick = { move(draft.id, 1) },
+                            )
+                            FluentButton(
+                                text = stringResource(R.string.write_delete_record), style = ButtonStyle.TextButton,
+                                modifier = Modifier.weight(1f).heightIn(min = PageMetrics.minTouchTarget).testTag("write-delete-" + draft.id),
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    drafts = drafts.filterNot { it.id == draft.id }
+                                    if (expandedId == draft.id) expandedId = drafts.getOrNull(index.coerceAtMost(drafts.lastIndex))?.id
+                                },
+                            )
                         }
                     }
+                }
+            }
+            if (drafts.isEmpty()) {
+                item { FluentText(stringResource(R.string.write_empty_records), FluentTextStyle.Body2, color = AppTheme.textSecondary) }
+            }
+            item {
+                FluentButton(
+                    text = stringResource(R.string.write_add_record), style = ButtonStyle.OutlinedButton,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = PageMetrics.minTouchTarget),
+                    onClick = {
+                        focusManager.clearFocus()
+                        val added = WriteRecordDraft(nextId++)
+                        drafts = drafts + added
+                        expandedId = added.id
+                        scope.launch { listState.animateScrollToItem(drafts.size) }
+                    },
+                )
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
+                    FluentText(
+                        if (message == null) stringResource(R.string.write_records_incomplete)
+                        else stringResource(R.string.write_records_summary, records.size, message.byteArrayLength),
+                        FluentTextStyle.Caption1, color = AppTheme.textSecondary,
+                    )
+                    if (message != null && message.byteArrayLength > MAX_EMULATED_NDEF_BYTES) {
+                        FluentText(stringResource(R.string.write_emulation_too_large, MAX_EMULATED_NDEF_BYTES),
+                            FluentTextStyle.Caption1, color = AppTheme.danger)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
+                        FluentButton(
+                            text = stringResource(R.string.button_write_tag), enabled = canWrite,
+                            modifier = Modifier.weight(1f).heightIn(min = PageMetrics.minTouchTarget),
+                            onClick = { focusManager.clearFocus(); onWriteRecords(records) },
+                        )
+                        FluentButton(
+                            text = stringResource(R.string.button_card_emulation), enabled = canEmulate,
+                            modifier = Modifier.weight(1f).heightIn(min = PageMetrics.minTouchTarget),
+                            onClick = { focusManager.clearFocus(); onStartEmulation(records) },
+                        )
+                    }
+                }
+            }
+        }
+
+        pickerRecordId?.let { id ->
+            ApplicationPickerDialog(
+                onApplicationSelected = { application ->
+                    drafts.find { it.id == id }?.let { update(it.copy(applicationPackageName = application.packageName)) }
+                    pickerRecordId = null
+                },
+                onDismissRequest = { pickerRecordId = null },
+            )
+        }
+        if (writeState != WriteState.IDLE) WriteProgressDialog(writeState, writeStatusMessage, onCancelWrite)
+    }
+}
+
+@Composable
+private fun WriteRecordEditor(
+    draft: WriteRecordDraft,
+    onChange: (WriteRecordDraft) -> Unit,
+    onPickApplication: () -> Unit,
+) {
+    var typeExpanded by remember { mutableStateOf(false) }
+    FluentDropdown(
+        text = stringResource(R.string.format_type_label, stringResource(draft.type.labelResId)),
+        expanded = typeExpanded,
+        onExpandedChange = { typeExpanded = it },
+        options = WriteDataType.entries.map { stringResource(it.labelResId) },
+        onOptionSelected = { index ->
+            val type = WriteDataType.entries[index]
+            if (type != draft.type) onChange(WriteRecordDraft(draft.id, type))
+            typeExpanded = false
+        },
+    )
+    when (draft.type) {
+        WriteDataType.TEXT -> {
+            FluentTextField(draft.textInput, { onChange(draft.copy(textInput = it)) },
+                stringResource(R.string.label_text_content), hintText = FormDefaults.TEXT)
+            FluentText(stringResource(R.string.hint_text_format), FluentTextStyle.Caption1, color = AppTheme.textHint)
+        }
+        WriteDataType.URL -> {
+            FluentTextField(draft.textInput, { onChange(draft.copy(textInput = it)) },
+                stringResource(R.string.label_url_input), hintText = FormDefaults.URL)
+            FluentText(stringResource(R.string.hint_url_format), FluentTextStyle.Caption1, color = AppTheme.textHint)
+        }
+        WriteDataType.WIFI -> {
+            FluentTextField(draft.wifiSsid, { onChange(draft.copy(wifiSsid = it)) },
+                stringResource(R.string.label_wifi_ssid), hintText = FormDefaults.WIFI_SSID)
+            FluentTextField(draft.wifiPassword, { onChange(draft.copy(wifiPassword = it)) },
+                stringResource(R.string.label_wifi_password), hintText = FormDefaults.WIFI_PASSWORD)
+            var encExpanded by remember { mutableStateOf(false) }
+            FluentDropdown(
+                text = stringResource(R.string.label_encryption_type) + "：" + stringResource(draft.wifiEncryption.displayResId),
+                expanded = encExpanded, onExpandedChange = { encExpanded = it },
+                options = WifiEncryption.entries.map { stringResource(it.displayResId) },
+                onOptionSelected = { onChange(draft.copy(wifiEncryption = WifiEncryption.entries[it])); encExpanded = false },
+            )
+            var authExpanded by remember { mutableStateOf(false) }
+            FluentDropdown(
+                text = stringResource(R.string.label_auth_type) + "：" + stringResource(draft.wifiAuth.displayResId),
+                expanded = authExpanded, onExpandedChange = { authExpanded = it },
+                options = WifiAuth.entries.map { stringResource(it.displayResId) },
+                onOptionSelected = { onChange(draft.copy(wifiAuth = WifiAuth.entries[it])); authExpanded = false },
+            )
+        }
+        WriteDataType.BLUETOOTH -> {
+            FluentTextField(draft.btMac, { onChange(draft.copy(btMac = it)) },
+                stringResource(R.string.label_bt_mac), hintText = FormDefaults.BT_MAC)
+            FluentTextField(draft.btName, { onChange(draft.copy(btName = it)) },
+                stringResource(R.string.label_bt_name), hintText = FormDefaults.BT_NAME)
+            FluentText(stringResource(R.string.hint_bt_format), FluentTextStyle.Caption1, color = AppTheme.textHint)
+        }
+        WriteDataType.APPLICATION -> {
+            FluentButton(onClick = onPickApplication, text = stringResource(R.string.button_select_application),
+                style = ButtonStyle.OutlinedButton, modifier = Modifier.fillMaxWidth().heightIn(min = PageMetrics.minTouchTarget))
+            FluentTextField(draft.applicationPackageName, { onChange(draft.copy(applicationPackageName = it)) },
+                stringResource(R.string.label_application_package), hintText = stringResource(R.string.placeholder_application_package))
+            FluentText(stringResource(R.string.hint_application_format), FluentTextStyle.Caption1, color = AppTheme.textHint)
+        }
+    }
+    val error = draft.toRecord().validationError()
+    if (error != null && (draft.type != WriteDataType.APPLICATION || draft.applicationPackageName.isNotBlank())) {
+        FluentText(stringResource(error), FluentTextStyle.Caption1, color = AppTheme.danger)
+    }
+}
+
+@Composable
+private fun WriteProgressDialog(writeState: WriteState, message: String, onCancel: () -> Unit) {
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+    ) {
+        FluentCard(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(FluentSpacing.xl),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(FluentSpacing.mPlus),
+            ) {
+                if (writeState in listOf(WriteState.WAITING_FOR_CARD, WriteState.WRITING, WriteState.EMULATING)) {
+                    CircularProgressIndicator()
+                }
+                val title = when (writeState) {
+                    WriteState.WAITING_FOR_CARD -> message.ifEmpty { stringResource(R.string.dialog_tap_card) }
+                    WriteState.WRITING -> stringResource(R.string.dialog_writing)
+                    WriteState.SUCCESS -> message.ifEmpty { stringResource(R.string.dialog_write_success) }
+                    WriteState.FAILED -> message.ifEmpty { stringResource(R.string.dialog_write_failed) }
+                    WriteState.EMULATING -> stringResource(R.string.dialog_emulation_started)
+                    WriteState.IDLE -> ""
+                }
+                FluentText(
+                    title, FluentTextStyle.Body1Strong,
+                    color = when (writeState) {
+                        WriteState.SUCCESS -> AppTheme.success
+                        WriteState.FAILED -> AppTheme.danger
+                        else -> AppTheme.textPrimary
+                    },
+                )
+                if (writeState == WriteState.EMULATING) {
+                    if (message.isNotEmpty()) FluentText(message, FluentTextStyle.Caption1, color = AppTheme.textHint)
+                    FluentText(stringResource(R.string.dialog_approach_reader), FluentTextStyle.Body2, color = AppTheme.textHint)
+                }
+                if (writeState == WriteState.WAITING_FOR_CARD || writeState == WriteState.EMULATING) {
+                    FluentButton(
+                        onClick = onCancel,
+                        style = ButtonStyle.TextButton,
+                        text = stringResource(if (writeState == WriteState.EMULATING) R.string.dialog_button_stop_emulation else R.string.button_cancel),
+                        modifier = Modifier.heightIn(min = PageMetrics.minTouchTarget),
+                    )
                 }
             }
         }
     }
 }
 
-// =======================================================================
-// 预览
-// =======================================================================
-@Preview(name = "写卡 · 浅色", showBackground = true)
+@Preview(name = "写卡 浅色", showBackground = true)
 @Composable
 private fun PreviewWriteCardScreenLight() {
-    MyApplicationTheme(darkTheme = false, dynamicColor = false) {
-        WriteCardScreen(
-            writeState = WriteState.IDLE,
-            writeStatusMessage = "",
-            onWriteText = {},
-            onWriteUrl = {},
-            onWriteWifi = { _, _, _, _ -> },
-            onWriteBluetooth = { _, _ -> }
-        )
-    }
+    MyApplicationTheme(darkTheme = false, dynamicColor = false) { WriteCardScreen(WriteState.IDLE, "", {}) }
 }
 
-@Preview(name = "写卡 · 深色", showBackground = true)
+@Preview(name = "写卡 深色", showBackground = true)
 @Composable
 private fun PreviewWriteCardScreenDark() {
-    MyApplicationTheme(darkTheme = true, dynamicColor = false) {
-        WriteCardScreen(
-            writeState = WriteState.IDLE,
-            writeStatusMessage = "",
-            onWriteText = {},
-            onWriteUrl = {},
-            onWriteWifi = { _, _, _, _ -> },
-            onWriteBluetooth = { _, _ -> }
-        )
-    }
-}
-
-@Preview(name = "写卡 · 深色 · 失败弹窗", showBackground = true)
-@Composable
-private fun PreviewWriteCardScreenDarkFailed() {
-    MyApplicationTheme(darkTheme = true, dynamicColor = false) {
-        WriteCardScreen(
-            writeState = WriteState.FAILED,
-            writeStatusMessage = "写入失败: 标签不可写",
-            onWriteText = {},
-            onWriteUrl = {},
-            onWriteWifi = { _, _, _, _ -> },
-            onWriteBluetooth = { _, _ -> }
-        )
-    }
+    MyApplicationTheme(darkTheme = true, dynamicColor = false) { WriteCardScreen(WriteState.IDLE, "", {}) }
 }

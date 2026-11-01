@@ -10,11 +10,13 @@ commits: HEAD
 
 ## Report
 
-**What was built** — `ui/theme/DesignTokens.kt` 统一管理颜色、排版、间距和页面布局；文本颜色在组合期写进 `TextStyle`；顶栏浅色模式使用品牌色、深色模式使用中性表面；三页保留响应式外边距和文字居中。2026-10-25 按用户要求取消统一 16dp 圆角，控件形状采用 Fluent 默认令牌，Snackbar 改用原生 `Accent` 样式，标题栏的点击反馈覆盖状态栏区域。2026-11-01 将输入框背景改为透明，并为聚焦和错误状态提供颜色与下划线反馈。`ThemeContrastTest` 保留 14 项对比度与色阶回归用例。
+**What was built** — `ui/theme/DesignTokens.kt` 统一管理颜色、排版、间距和页面布局；文本颜色在组合期写进 `TextStyle`；顶栏浅色模式使用品牌色、深色模式使用中性表面；三页保留响应式外边距，页面标题默认居中，读卡记录正文左对齐。2026-10-25 按用户要求取消统一 16dp 圆角，控件形状采用 Fluent 默认令牌，Snackbar 改用原生 `Accent` 样式，标题栏的点击反馈覆盖状态栏区域。2026-11-01 将输入框背景改为透明，并为聚焦和错误状态提供颜色与下划线反馈；读卡结果改为按记录分卡片展示，支持长内容展开、文字选择及复制，技术信息按需查看。`ThemeContrastTest` 保留 14 项对比度与色阶回归用例。
 
 **Verification（2026-10-25）** — Debug、Release 和设备测试 APK 构建通过；57 项单元测试及 13 项设备测试通过；Lint 无错误。独立 Android 17 AVD 已检查浅色、深色输入框、原生 Snackbar，以及按住标题时覆盖状态栏的水波纹。
 
 **Verification（2026-11-01）** — 使用 Gradle 9.8.2 完成 Debug、Release 和设备测试 APK 构建，57 项单元测试及 Lint 通过；Release APK 的版本为 `2026.11.01.1`，versionCode 为 `202611011`。
+
+**读卡展示验证（2026-11-01）** — 本次界面调整完成 Debug 和设备测试 APK 构建，57 项单元测试、Lint 及 26 项模拟器测试通过。新增用例覆盖多条记录、UTF-16、Wi-Fi 字段、蓝牙名称、损坏记录、完整复制、展开状态重置，以及窄屏大字体排版；保留应用记录仅展示、不跳转的冷启动与新 Intent 回归。
 
 **Journey log** — 踩坑记录：
 
@@ -150,7 +152,7 @@ Fluent 的 `Menu` 浮层宽度取自**内容固有宽度**（`MenuContent` 内�
 - 正文列最大宽度 680dp，超出后居中，避免行长过长。
 - 交互元素最小高度 48dp（Fluent 与 Android 共同要求），下拉菜单行同样适用。
 - 间距全部取自 4px 基准的 Fluent 间距阶梯。
-- **所有文本居中**，由 `FluentText(centered = true)` 默认开启；需要靠左时显式传 `centered = false`。
+- 页面标题及表单默认居中；读卡结果中的记录标题、字段和正文左对齐，便于阅读多行内容与逐项比较。
 - 排版固定为「顶栏 `Title3`(16sp) → 页面 `Title3`(16sp) → 正文 `Body1`/`Body2` → 说明 `Caption1`」，禁止只改 `fontSize` 不配行高。
 - 控件圆角使用 Fluent SDK 默认令牌。
 
@@ -174,8 +176,8 @@ Fluent 的 `Menu` 浮层宽度取自**内容固有宽度**（`MenuContent` 内�
 | `ui/theme/DesignTokens.kt` | 令牌层（颜色/排版/间距/高度/动效）+ `FluentText`、`FluentTextField`、`FluentButton`、`FluentCard`、`FluentDropdown`、原生 `FluentSnackbarHost`、`PageColumn` |
 | `ui/theme/Theme.kt` | 移除固定黑白前景色；品牌色阶改为按官方亮度分布展开 |
 | `ui/theme/NavigationView.kt` | 顶栏改用 `AppTheme.brandSurface`（浅色品牌色 / 深色中性）+ 居中文字；底栏自实现以延伸点击区 |
-| `ui/theme/NFCReaderScreen.kt` | 改用 `PageColumn` + `FluentText`；卡片内部滚动；边距加大 |
-| `ui/theme/WriteCardScreen.kt` | 同上；输入框使用原生形状并保留文字对比度修正；失败提示用 `AppTheme.danger` |
+| `ui/theme/NFCReaderScreen.kt` | 使用统一外边距的 `LazyColumn`，按记录展示原生 Fluent 卡片；正文支持选择、展开与复制，技术信息按需展开 |
+| `ui/theme/WriteCardScreen.kt` | 统一外边距的多记录列表，支持添加、编辑、删除和排序；输入框使用原生形状并保留文字对比度修正，失败提示用 `AppTheme.danger` |
 | `ui/theme/P2PScreen.kt` | 同上；成功态用 `AppTheme.success`；菜单行 48dp 且居中 |
 | `MainActivity.kt` | `enableEdgeToEdge` 显式传入跟随应用主题的 `SystemBarStyle` |
 | `res/values/themes.xml` | 重写：DayNight 基础主题 + 窗口背景 + 系统栏 |
@@ -198,7 +200,7 @@ Fluent 的 `Menu` 浮层宽度取自**内容固有宽度**（`MenuContent` 内�
 - [x] T1: 建立 `DesignTokens.kt` 令牌层 — acceptance: 颜色/排版/间距/形状/高度/动效均有语义令牌 (covers: S2)
 - [x] T2: 文本颜色显式化 — acceptance: 无任何文本依赖 `LocalContentColor`，全走 `FluentText` (covers: S1)
 - [x] T3: 顶栏品牌色 — acceptance: 浅色白字/品牌底色 ≥ 4.5:1，深色模式顶栏亮度 < 0.10 (covers: S1)
-- [x] T4: 布局规范化 — acceptance: 外边距 ≥ 24dp、文字全部居中、交互元素 ≥ 48dp (covers: S2)
+- [x] T4: 布局规范化 — acceptance: 外边距 ≥ 24dp、页面标题居中、读卡记录正文左对齐、交互元素 ≥ 48dp (covers: S2)
 - [x] T5: 原生圆角 — acceptance: 移除统一圆角及各控件的圆角覆盖，输入框移除外层圆角容器 (covers: S2)
 - [x] T6: 下拉浮层与按钮对齐 — acceptance: 浮层宽度等于触发按钮实测宽度，无硬编码宽度 (covers: S2)
 - [x] T7: 原生 Snackbar — acceptance: 原生 Accent 样式、与底栏留 16dp 间距、文字对比度 ≥ 4.5:1 (covers: S2)

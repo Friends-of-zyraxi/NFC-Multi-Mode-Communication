@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalStdlibApi::class)
-
 package io.github.zyraxi21.nfc
 
 import android.app.PendingIntent
@@ -13,7 +11,6 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.nfc.NdefMessage
-import android.nfc.NdefRecord
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.*
@@ -40,23 +37,23 @@ import io.github.zyraxi21.nfc.ui.theme.ConnectionState
 import io.github.zyraxi21.nfc.ui.theme.MyApplicationTheme
 import io.github.zyraxi21.nfc.ui.theme.NFCReaderScreen
 import io.github.zyraxi21.nfc.ui.theme.P2PScreen
-import io.github.zyraxi21.nfc.ui.theme.WifiAuth
-import io.github.zyraxi21.nfc.ui.theme.WifiEncryption
 import io.github.zyraxi21.nfc.ui.theme.WriteCardScreen
-import io.github.zyraxi21.nfc.ui.theme.WriteDataType
 import io.github.zyraxi21.nfc.ui.theme.WriteState
-import io.github.zyraxi21.nfc.util.createApplicationNdefMessage
-import io.github.zyraxi21.nfc.util.isValidApplicationPackageName
+import io.github.zyraxi21.nfc.util.NfcReadResult
+import io.github.zyraxi21.nfc.util.parseNfcReadResult
+import io.github.zyraxi21.nfc.util.HceDataStore
+import io.github.zyraxi21.nfc.util.InvalidWriteRecordException
+import io.github.zyraxi21.nfc.util.MAX_EMULATED_NDEF_BYTES
+import io.github.zyraxi21.nfc.util.NfcWriteRecord
+import io.github.zyraxi21.nfc.util.createNfcWriteMessage
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.nio.charset.Charset
 import kotlin.time.Duration.Companion.seconds
 import java.nio.charset.StandardCharsets
-import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
@@ -71,31 +68,15 @@ class MainActivity : ComponentActivity() {
     private val serviceId = "io.github.zyraxi21.nfc.P2P"
 
     // 读卡 UI 状态 (来自 ReadCard.kt)
-    private var tagInfo by mutableStateOf("")
-    private var tagContent by mutableStateOf("")
+    private var readerResult by mutableStateOf<NfcReadResult?>(null)
     // 默认隐藏；自检发现 NFC 不可用/未启用时才显示检查按钮
     private var isReaderButtonVisible by mutableStateOf(false)
 
-    // 写卡 UI 状态 (来自 WriteCard.kt)
-    enum class WriteMode { IDLE, TEXT, URL, WIFI, BLUETOOTH, APPLICATION }
-    private var currentWriteMode by mutableStateOf(WriteMode.IDLE)
-    private var inputText by mutableStateOf("")
-
-    // 写入流程状态（驱动弹窗）
+    // 一次提交只保存一条完整 NDEF 消息，标签写入与 HCE 使用同一个编码入口。
+    @Volatile
+    private var pendingWriteMessage: NdefMessage? = null
     var writeState by mutableStateOf(WriteState.IDLE)
     var writeStatusMessage by mutableStateOf("")
-
-    // Wi-Fi 写入数据
-    var wifiSsid by mutableStateOf("")
-    var wifiPassword by mutableStateOf("")
-    var wifiEncryption by mutableStateOf(WifiEncryption.AES)
-    var wifiAuth by mutableStateOf(WifiAuth.WPA2_PSK)
-
-    // 蓝牙写入数据
-    var btMac by mutableStateOf("")
-    var btName by mutableStateOf("")
-
-    private var applicationPackageName by mutableStateOf("")
 
     private var snackbarHostState: SnackbarState? = null
 
@@ -124,25 +105,10 @@ class MainActivity : ComponentActivity() {
 
         /** 保存/恢复卡模拟状态用的 key */
         private const val STATE_WRITE_STATE = "write_state"
+        private const val STATE_PENDING_NDEF = "pending_ndef"
 
         /** 从对端 HCE 卡读取 NDEF 时的防御性总长度上限（64 KiB） */
         private const val MAX_EMULATED_BYTES = 64 * 1024
-
-        val URI_PREFIX_MAP = mapOf(
-            0x00.toByte() to "", 0x01.toByte() to "http://www.", 0x02.toByte() to "https://www.",
-            0x03.toByte() to "http://", 0x04.toByte() to "https://", 0x05.toByte() to "tel:",
-            0x06.toByte() to "mailto:", 0x07.toByte() to "ftp://anonymous:anonymous@",
-            0x08.toByte() to "ftp://ftp.", 0x09.toByte() to "ftps://", 0x0A.toByte() to "sftp://",
-            0x0B.toByte() to "smb://", 0x0C.toByte() to "nfs://", 0x0D.toByte() to "ftp://",
-            0x0E.toByte() to "dav://", 0x0F.toByte() to "news:", 0x10.toByte() to "telnet://",
-            0x11.toByte() to "imap:", 0x12.toByte() to "rtsp://", 0x13.toByte() to "urn:",
-            0x14.toByte() to "pop:", 0x15.toByte() to "sip:", 0x16.toByte() to "sips:",
-            0x17.toByte() to "tftp:", 0x18.toByte() to "btspp://", 0x19.toByte() to "btl2cap://",
-            0x1A.toByte() to "btgoep://", 0x1B.toByte() to "tcpobex://", 0x1C.toByte() to "irdaobex://",
-            0x1D.toByte() to "file://", 0x1E.toByte() to "urn:epc:id:", 0x1F.toByte() to "urn:epc:tag:",
-            0x20.toByte() to "urn:epc:pat:", 0x21.toByte() to "urn:epc:raw:", 0x22.toByte() to "urn:epc:",
-            0x23.toByte() to "urn:nfc:"
-        )
     }
 
 
@@ -179,9 +145,15 @@ class MainActivity : ComponentActivity() {
 
         // 恢复卡模拟状态：Activity 重建后若状态退回 IDLE，onResume 会重新打开 reader mode，
         // 而 reader mode 会关闭卡模拟，正在进行的模拟会因此失效。
-        savedInstanceState?.getString(STATE_WRITE_STATE)
-            ?.let { saved -> WriteState.entries.firstOrNull { it.name == saved } }
-            ?.let { restored -> writeState = restored }
+        pendingWriteMessage = savedInstanceState?.getByteArray(STATE_PENDING_NDEF)
+            ?.let { runCatching { NdefMessage(it) }.getOrNull() }
+        val restoredState = savedInstanceState?.getString(STATE_WRITE_STATE)
+        writeState = when {
+            restoredState == WriteState.EMULATING.name && HceDataStore.load(this) != null -> WriteState.EMULATING
+            pendingWriteMessage != null -> WriteState.WAITING_FOR_CARD
+            else -> WriteState.IDLE
+        }
+        if (writeState == WriteState.WAITING_FOR_CARD) writeStatusMessage = getString(R.string.status_tap_card)
 
         // 初始化 Nearby Connections 客户端
         connectionsClient = Nearby.getConnectionsClient(this)
@@ -277,8 +249,7 @@ class MainActivity : ComponentActivity() {
                 BottomNavigationApp(
                     readerScreen = {
                         NFCReaderScreen(
-                            tagInfo = tagInfo,
-                            tagContent = tagContent,
+                            result = readerResult,
                             isButtonVisible = isReaderButtonVisible,
                             onCheckNfcClick = {
                                 checkNfcAvailability { messageRes, actionRes, action ->
@@ -300,135 +271,12 @@ class MainActivity : ComponentActivity() {
                         WriteCardScreen(
                             writeState = writeState,
                             writeStatusMessage = writeStatusMessage,
-                            onWriteText = {
-                                if (it.isBlank()) {
-                                    writeStatusMessage = getString(R.string.error_text_blank)
-                                    writeState = WriteState.FAILED
-                                    return@WriteCardScreen
-                                }
-                                currentWriteMode = WriteMode.TEXT
-                                inputText = it
-                                writeState = WriteState.WAITING_FOR_CARD
-                                writeStatusMessage = getString(R.string.status_tap_card)
-                            },
-                            onWriteUrl = {
-                                if (it.isBlank()) {
-                                    writeStatusMessage = getString(R.string.error_url_blank)
-                                    writeState = WriteState.FAILED
-                                    return@WriteCardScreen
-                                }
-                                currentWriteMode = WriteMode.URL
-                                inputText = it
-                                writeState = WriteState.WAITING_FOR_CARD
-                                writeStatusMessage = getString(R.string.status_tap_card)
-                            },
-                            onWriteWifi = { ssid, password, encryption, auth ->
-                                if (ssid.isBlank()) {
-                                    writeStatusMessage = getString(R.string.error_wifi_ssid_blank)
-                                    writeState = WriteState.FAILED
-                                    return@WriteCardScreen
-                                }
-                                currentWriteMode = WriteMode.WIFI
-                                wifiSsid = ssid
-                                wifiPassword = password
-                                wifiEncryption = encryption
-                                wifiAuth = auth
-                                writeState = WriteState.WAITING_FOR_CARD
-                                writeStatusMessage = getString(R.string.status_tap_card)
-                            },
-                            onWriteBluetooth = { mac, name ->
-                                if (mac.isBlank()) {
-                                    writeStatusMessage = getString(R.string.error_bt_mac_blank)
-                                    writeState = WriteState.FAILED
-                                    return@WriteCardScreen
-                                }
-                                currentWriteMode = WriteMode.BLUETOOTH
-                                btMac = mac
-                                btName = name
-                                writeState = WriteState.WAITING_FOR_CARD
-                                writeStatusMessage = getString(R.string.status_tap_card)
-                            },
-                            onWriteApplication = { packageName ->
-                                if (!isValidApplicationPackageName(packageName)) {
-                                    writeStatusMessage = getString(R.string.error_application_package)
-                                    writeState = WriteState.FAILED
-                                    return@WriteCardScreen
-                                }
-                                currentWriteMode = WriteMode.APPLICATION
-                                applicationPackageName = packageName.trim()
-                                writeState = WriteState.WAITING_FOR_CARD
-                                writeStatusMessage = getString(R.string.status_tap_card)
-                            },
-                            onStartEmulation = { type, textInput, wifiSsid, wifiPassword, wifiEncryption, wifiAuth, btMac, btName, applicationPackageName ->
-                                // 验证输入
-                                when (type) {
-                                    WriteDataType.TEXT, WriteDataType.URL -> {
-                                        if (textInput.isBlank()) {
-                                            writeStatusMessage = getString(R.string.error_content_blank)
-                                            writeState = WriteState.FAILED
-                                            return@WriteCardScreen
-                                        }
-                                        inputText = textInput
-                                    }
-                                    WriteDataType.WIFI -> {
-                                        if (wifiSsid.isBlank()) {
-                                            writeStatusMessage = getString(R.string.error_wifi_ssid_blank)
-                                            writeState = WriteState.FAILED
-                                            return@WriteCardScreen
-                                        }
-                                        this@MainActivity.wifiSsid = wifiSsid
-                                        this@MainActivity.wifiPassword = wifiPassword
-                                        this@MainActivity.wifiEncryption = wifiEncryption
-                                        this@MainActivity.wifiAuth = wifiAuth
-                                    }
-                                    WriteDataType.BLUETOOTH -> {
-                                        if (btMac.isBlank()) {
-                                            writeStatusMessage = getString(R.string.error_bt_mac_blank)
-                                            writeState = WriteState.FAILED
-                                            return@WriteCardScreen
-                                        }
-                                        this@MainActivity.btMac = btMac
-                                        this@MainActivity.btName = btName
-                                    }
-                                    WriteDataType.APPLICATION -> {
-                                        if (!isValidApplicationPackageName(applicationPackageName)) {
-                                            writeStatusMessage = getString(R.string.error_application_package)
-                                            writeState = WriteState.FAILED
-                                            return@WriteCardScreen
-                                        }
-                                        this@MainActivity.applicationPackageName = applicationPackageName.trim()
-                                    }
-                                }
-                                // 构建 NDEF 消息并存入 HCE 服务
-                                val ndefMessage = when (type) {
-                                    WriteDataType.TEXT -> createTextNdefMessage(textInput)
-                                    WriteDataType.URL -> createUriNdefMessage(textInput)
-                                    WriteDataType.WIFI -> createWifiNdefMessage(wifiSsid, wifiPassword, wifiEncryption, wifiAuth)
-                                    WriteDataType.BLUETOOTH -> createBluetoothNdefMessage(btMac, btName)
-                                    WriteDataType.APPLICATION -> createApplicationNdefMessage(applicationPackageName)
-                                }
-                                // 写入 HCE 服务并同步落盘：进程被回收后服务重启仍能恢复数据
-                                MyHostApduService.setEmulatedData(
-                                    this@MainActivity,
-                                    ndefMessage.toByteArray(),
-                                    type.name
-                                )
-                                // 设置我们的 HCE 服务为首选，避免系统钱包抢夺
-                                try {
-                                    val ce = CardEmulation.getInstance(nfcAdapter)
-                                    ce.setPreferredService(
-                                        this@MainActivity,
-                                        ComponentName(this@MainActivity, MyHostApduService::class.java)
-                                    )
-                                } catch (e: Exception) {
-                                    Log.w(TAG, "Failed to set preferred HCE service", e)
-                                }
-                                writeState = WriteState.EMULATING
-                            },
+                            onWriteRecords = ::armWriteRecords,
+                            onStartEmulation = ::startRecordEmulation,
                             onCancelWrite = {
                                 writeState = WriteState.IDLE
                                 writeStatusMessage = ""
-                                currentWriteMode = WriteMode.IDLE
+                                pendingWriteMessage = null
                                 MyHostApduService.setEmulatedData(this@MainActivity, null)
                                 // 取消首选服务：setPreferredService(activity, null) 会抛 NPE，
                                 // 必须使用 unsetPreferredService
@@ -447,7 +295,7 @@ class MainActivity : ComponentActivity() {
                                     delay(1.seconds)
                                     writeState = WriteState.IDLE
                                     writeStatusMessage = ""
-                                    currentWriteMode = WriteMode.IDLE
+                                    pendingWriteMessage = null
                                 }
                                 WriteState.EMULATING -> {
                                     nfcAdapter?.disableReaderMode(this@MainActivity)
@@ -513,11 +361,9 @@ class MainActivity : ComponentActivity() {
         val messages = intent.getParcelableArrayExtra(
             NfcAdapter.EXTRA_NDEF_MESSAGES, NdefMessage::class.java
         )?.toList().orEmpty()
-        if (messages.isEmpty()) return
-        intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)?.let { tag ->
-            tagInfo = getString(R.string.format_tag_info, tag.toString())
-        }
-        tagContent = parseNdefMessages(messages)
+        val tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
+        if (messages.isEmpty() && tag == null) return
+        displayReadResult(messages, tag)
     }
 
     private fun checkNfcAvailability(
@@ -546,319 +392,73 @@ class MainActivity : ComponentActivity() {
 
 
 
-    private fun parseNdefMessages(messages: List<NdefMessage>): String {
-        val result = StringBuilder()
-
-        messages.forEach { message ->
-            message.records.forEach { record ->
-                result.append(when (record.tnf) {
-                    NdefRecord.TNF_WELL_KNOWN -> parseWellKnownRecord(record)
-                    NdefRecord.TNF_MIME_MEDIA -> parseMimeRecord(record)
-                    NdefRecord.TNF_EXTERNAL_TYPE -> parseExternalRecord(record)
-                    else -> getString(R.string.format_record_unknown, record.payload.toHexString()) + "\n"
-                })
-            }
-        }
-
-        return result.toString().trim()
+    private fun displayReadResult(
+        messages: List<NdefMessage>,
+        tag: Tag?,
+        isEmulated: Boolean = false,
+        noticeResId: Int? = null,
+    ) {
+        val result = parseNfcReadResult(this, messages, tag, isEmulated, noticeResId)
+        // ReaderCallback 在 NFC 工作线程调用；一次替换完整结果，避免标签信息与内容错配。
+        runOnUiThread { readerResult = result }
     }
-
-    private fun parseWellKnownRecord(record: NdefRecord): String {
-        return when {
-            record.type.contentEquals(NdefRecord.RTD_TEXT) -> {
-                getString(R.string.format_record_text, parseTextRecord(record)) + "\n"
-            }
-            record.type.contentEquals(NdefRecord.RTD_URI) -> {
-                getString(R.string.format_record_uri, parseUriRecord(record)) + "\n"
-            }
-            else -> getString(R.string.msg_unknown_well_known) + "\n"
-        }
-    }
-
-    private fun parseMimeRecord(record: NdefRecord): String {
-        return when (record.toMimeType()) {
-            "application/vnd.wfa.wsc" -> {
-                val wifiPayload = record.payload
-                val wifiInfo = parseWifiRecord(wifiPayload)
-                getString(R.string.format_record_wifi, wifiInfo)
-            }
-            "application/vnd.bluetooth.ep.oob" -> getString(R.string.format_record_bluetooth, parseBluetoothRecord(record))
-            else -> getString(R.string.format_record_mime, record.toMimeType(), record.payload.toHexString()) + "\n"
-        }
-    }
-
-    private fun parseExternalRecord(record: NdefRecord): String {
-        return when (String(record.type)) {
-            "android.com:pkg" -> getString(R.string.format_record_app, parseApplicationRecord(record)) + "\n"
-            else -> getString(R.string.format_record_external, String(record.type)) + "\n"
-        }
-    }
-
-    private fun parseTextRecord(record: NdefRecord): String {
-        return try {
-            val payload = record.payload
-            val textEncoding = if ((payload[0].toInt() and 0x80) == 0) "UTF-8" else "UTF-16"
-            val languageCodeLength = payload[0].toInt() and 0x3F
-            String(payload, languageCodeLength + 1, payload.size - languageCodeLength - 1,
-                Charset.forName(textEncoding))
-        } catch (e: Exception) {
-            Log.w(TAG, "解析文本记录失败", e)
-            getString(R.string.msg_parse_error)
-        }
-    }
-
-    private fun parseUriRecord(record: NdefRecord): String {
-        val prefix = URI_PREFIX_MAP[record.payload[0]] ?: ""
-        return try {
-            prefix + String(record.payload, 1, record.payload.size - 1, Charsets.UTF_8)
-        } catch (e: Exception) {
-            Log.w(TAG, "解析URI记录失败", e)
-            getString(R.string.msg_invalid_uri)
-        }
-    }
-
-    fun parseWifiRecord(payload: ByteArray): String {
-        val sb = StringBuilder()
-        var index = 0
-        while (index + 4 <= payload.size) {
-            val type = ((payload[index].toInt() and 0xFF) shl 8) or (payload[index + 1].toInt() and 0xFF)
-            val length = ((payload[index + 2].toInt() and 0xFF) shl 8) or (payload[index + 3].toInt() and 0xFF)
-            index += 4
-            if (index + length > payload.size) break
-
-            val data = payload.copyOfRange(index, index + length)
-            index += length
-
-            when (type) {
-                0x1045 -> sb.appendLine(getString(R.string.format_ssid, String(data)))
-                0x1027 -> sb.appendLine(getString(R.string.format_wifi_password, String(data)))
-                0x1003 -> {
-                    // WSC 属性 0x1003 = Authentication Type（认证类型）
-                    if (data.size >= 2) {
-                        val authType = ((data[0].toInt() and 0xFF) shl 8) or (data[1].toInt() and 0xFF)
-                        sb.appendLine(getString(R.string.format_auth_type, getAuthTypeName(authType)))
-                    } else {
-                        sb.appendLine(getString(R.string.msg_auth_data_short))
-                    }
-                }
-                0x100F -> {
-                    // WSC 属性 0x100F = Encryption Type（加密类型）
-                    if (data.size >= 2) {
-                        val encryptionType = ((data[0].toInt() and 0xFF) shl 8) or (data[1].toInt() and 0xFF)
-                        sb.appendLine(getString(R.string.format_encryption_type, getEncryptionTypeName(encryptionType)))
-                    } else {
-                        sb.appendLine(getString(R.string.msg_encryption_data_short))
-                    }
-                }
-                0x1020 -> sb.appendLine(getString(R.string.format_mac_address, data.toMacAddress()))
-                0x1026 -> {
-                    val netTypeName = when (val netType = data[0].toInt() and 0xFF) {
-                        0x00 -> getString(R.string.msg_unknown)
-                        0x01 -> getString(R.string.msg_infrastructure)
-                        0x02 -> getString(R.string.msg_independent)
-                        else -> getString(R.string.format_reserved_type, netType.toString(16))
-                    }
-                    sb.appendLine(getString(R.string.format_network_type, netTypeName))
-                }
-                0x100E -> {
-                    sb.append(parseWifiRecord(data))
-                }
-                else -> sb.appendLine(getString(R.string.format_unknown_field, type.toString(16), data.toHexString()))
-            }
-        }
-        return sb.toString()
-    }
-
-    private fun parseBluetoothRecord(record: NdefRecord): String {
-        val bytes = record.payload
-        val hexDump = bytes.joinToString(" ") { "%02X".format(it) }
-
-        if (record.toUri()?.scheme?.startsWith("bt") == true) {
-            val uri = record.toUri()!!
-            val mac = uri.host ?: "未知"
-            val name = uri.path?.substringAfter("/")?.trim().orEmpty()
-            return getString(R.string.format_bt_uri_record, mac, name, hexDump)
-        } else {
-            val bytes = record.payload
-            Log.d("BluetoothTag", "原始数据: ${bytes.joinToString(" ") { "%02X".format(it) }}")
-
-            if (bytes.size < 8) return getString(R.string.msg_invalid_bt_data)
-            val mac = bytes.copyOfRange(2, 8).reversed().joinToString(":") { "%02X".format(it) }
-            val name = if (bytes.size > 8) {
-                String(bytes, 8, bytes.size - 8, Charsets.UTF_8).trim()
-            } else {
-                ""
-            }
-            return getString(R.string.format_bt_raw_record, mac, name)
-        }
-    }
-
-
-    private fun parseApplicationRecord(record: NdefRecord): String {
-        return try {
-            String(record.payload, Charsets.UTF_8)
-        } catch (e: Exception) {
-            Log.w(TAG, "解析应用记录失败", e)
-            getString(R.string.msg_unknown_app)
-        }
-    }
-
-    // 扩展函数 (来自 ReadCard.kt)
-    private fun ByteArray.toMacAddress(): String = joinToString(":") { "%02X".format(it) }
-    private fun ByteArray.toHexString(): String = joinToString("") { "%02X".format(it) }
-
-    /** WSC Authentication Type（属性 0x1003）取值 → 名称，取值见 Wi-Fi Simple Configuration 规范 */
-    private fun getAuthTypeName(value: Int): String = when(value) {
-        0x0001 -> getString(R.string.auth_open_system)
-        0x0002 -> getString(R.string.auth_wpa_psk)
-        0x0004 -> getString(R.string.auth_shared_key)
-        0x0008 -> getString(R.string.auth_wpa_eap)
-        0x0010 -> getString(R.string.auth_wpa2_eap)
-        0x0020 -> getString(R.string.auth_wpa2_psk)
-        0x0022 -> getString(R.string.auth_wpa_wpa2_psk)
-        0x0040 -> getString(R.string.auth_wpa3_sae)
-        0x0080 -> getString(R.string.auth_wpa3_eap)
-        else -> getString(R.string.format_unknown_auth, value)
-    }
-
-    /** WSC Encryption Type（属性 0x100F）取值 → 名称，取值见 Wi-Fi Simple Configuration 规范 */
-    private fun getEncryptionTypeName(value: Int): String = when(value) {
-        0x0001 -> getString(R.string.enc_none)
-        0x0002 -> getString(R.string.enc_wep)
-        0x0004 -> getString(R.string.enc_tkip)
-        0x0008 -> getString(R.string.enc_aes)
-        0x000C -> getString(R.string.enc_aes_tkip)
-        else -> getString(R.string.format_unknown_encryption, value)
-    }
-
 
     // =======================================================================
     // NFC 写卡（来自 WriteCard.kt）
     // =======================================================================
 
+    private fun prepareWriteMessage(records: List<NfcWriteRecord>): NdefMessage? {
+        if (records.isEmpty()) {
+            writeStatusMessage = getString(R.string.write_empty_records)
+            writeState = WriteState.FAILED
+            return null
+        }
+        return try {
+            createNfcWriteMessage(records)
+        } catch (e: InvalidWriteRecordException) {
+            writeStatusMessage = getString(R.string.write_invalid_record, e.recordIndex + 1, getString(e.errorResId))
+            writeState = WriteState.FAILED
+            null
+        } catch (e: Exception) {
+            writeStatusMessage = getString(R.string.status_write_failed, e.message)
+            writeState = WriteState.FAILED
+            null
+        }
+    }
+
+    private fun armWriteRecords(records: List<NfcWriteRecord>) {
+        if (writeState != WriteState.IDLE) return
+        val message = prepareWriteMessage(records) ?: return
+        pendingWriteMessage = message
+        writeStatusMessage = getString(R.string.status_tap_records, records.size, message.byteArrayLength)
+        writeState = WriteState.WAITING_FOR_CARD
+    }
+
+    private fun startRecordEmulation(records: List<NfcWriteRecord>) {
+        if (writeState != WriteState.IDLE) return
+        val message = prepareWriteMessage(records) ?: return
+        if (message.byteArrayLength > MAX_EMULATED_NDEF_BYTES) {
+            writeStatusMessage = getString(R.string.write_emulation_too_large, MAX_EMULATED_NDEF_BYTES)
+            writeState = WriteState.FAILED
+            return
+        }
+        pendingWriteMessage = null
+        MyHostApduService.setEmulatedData(this, message.toByteArray(),
+            if (records.size == 1) records.single().type.name else "MULTI")
+        try {
+            CardEmulation.getInstance(nfcAdapter).setPreferredService(
+                this, ComponentName(this, MyHostApduService::class.java)
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set preferred HCE service", e)
+        }
+        writeStatusMessage = getString(R.string.write_records_summary, records.size, message.byteArrayLength)
+        writeState = WriteState.EMULATING
+    }
+
     private fun handleWriteIntent(intent: Intent) {
         val tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java) ?: return
-
-        if (currentWriteMode == WriteMode.IDLE) return // 非写入模式不处理
-
-        // 检测到卡片，进入写入中状态
-        writeState = WriteState.WRITING
-        writeStatusMessage = getString(R.string.status_writing)
-
-        try {
-            val message: NdefMessage = when (currentWriteMode) {
-                WriteMode.TEXT -> createTextNdefMessage(inputText)
-                WriteMode.URL -> createUriNdefMessage(inputText)
-                WriteMode.WIFI -> createWifiNdefMessage(wifiSsid, wifiPassword, wifiEncryption, wifiAuth)
-                WriteMode.BLUETOOTH -> createBluetoothNdefMessage(btMac, btName)
-                WriteMode.APPLICATION -> createApplicationNdefMessage(applicationPackageName)
-                WriteMode.IDLE -> return
-            }
-
-            if (isNdefCompatible(tag)) {
-                writeNdefMessage(tag, message)
-            } else if (NdefFormatable.get(tag) != null) {
-                formatAndWrite(tag, message)
-            } else {
-                throw IOException(getString(R.string.msg_tag_not_ndef))
-            }
-            writeState = WriteState.SUCCESS
-            writeStatusMessage = getString(R.string.status_write_success)
-        } catch(e: Exception) {
-            writeState = WriteState.FAILED
-            writeStatusMessage = getString(R.string.status_write_failed, e.message)
-            Log.e("NFC", "写入错误", e)
-        }
-    }
-
-    private fun createTextNdefMessage(text: String): NdefMessage {
-        val lang = Locale.getDefault().language.toByteArray(StandardCharsets.US_ASCII)
-        val textBytes = text.toByteArray(StandardCharsets.UTF_8)
-        val payload = ByteArray(lang.size + 1 + textBytes.size)
-        payload[0] = lang.size.toByte() // 状态字节：UTF-8 且语言代码长度
-        System.arraycopy(lang, 0, payload, 1, lang.size)
-        System.arraycopy(textBytes, 0, payload, 1 + lang.size, textBytes.size)
-        val record = NdefRecord(NdefRecord.TNF_WELL_KNOWN, NdefRecord.RTD_TEXT, ByteArray(0), payload)
-        return NdefMessage(record)
-    }
-
-    private fun createUriNdefMessage(uri: String): NdefMessage {
-        val record = NdefRecord.createUri(uri)
-        return NdefMessage(record)
-    }
-
-    // ---- WiFi NDEF (WSC / application/vnd.wfa.wsc) ----
-    private fun createWifiNdefMessage(
-        ssid: String, password: String,
-        encryption: WifiEncryption, auth: WifiAuth
-    ): NdefMessage {
-        val ssidBytes = ssid.toByteArray(Charsets.UTF_8)
-        val pwdBytes = password.toByteArray(Charsets.UTF_8)
-        val encBytes = byteArrayOf(
-            ((encryption.wscValue shr 8) and 0xFF).toByte(),
-            (encryption.wscValue and 0xFF).toByte()
-        )
-        val authBytes = byteArrayOf(
-            ((auth.wscValue shr 8) and 0xFF).toByte(),
-            (auth.wscValue and 0xFF).toByte()
-        )
-
-        // TLV: Type(2) + Length(2) + Value
-        val totalSize = (4 + ssidBytes.size) + (4 + pwdBytes.size) + (4 + 2) + (4 + 2)
-        val payload = ByteArray(totalSize)
-        var pos = 0
-
-        fun writeTlv(type: Int, data: ByteArray) {
-            payload[pos] = ((type shr 8) and 0xFF).toByte()
-            payload[pos + 1] = (type and 0xFF).toByte()
-            payload[pos + 2] = ((data.size shr 8) and 0xFF).toByte()
-            payload[pos + 3] = (data.size and 0xFF).toByte()
-            System.arraycopy(data, 0, payload, pos + 4, data.size)
-            pos += 4 + data.size
-        }
-
-        writeTlv(0x1045, ssidBytes)   // SSID
-        writeTlv(0x1027, pwdBytes)    // Network Key
-        writeTlv(0x100F, encBytes)    // Encryption Type
-        writeTlv(0x1003, authBytes)   // Authentication Type
-
-        val record = NdefRecord(
-            NdefRecord.TNF_MIME_MEDIA,
-            "application/vnd.wfa.wsc".toByteArray(StandardCharsets.US_ASCII),
-            ByteArray(0),
-            payload
-        )
-        return NdefMessage(record)
-    }
-
-    // ---- 蓝牙 NDEF (application/vnd.bluetooth.ep.oob) ----
-    private fun createBluetoothNdefMessage(mac: String, name: String): NdefMessage {
-        // 解析 MAC 地址为字节
-        val macBytes = try {
-            mac.split(":").map { it.toInt(16).toByte() }.toByteArray()
-        } catch (_: Exception) {
-            // 如果格式不对，填零
-            ByteArray(6)
-        }.let { if (it.size < 6) it + ByteArray(6 - it.size) else it.copyOf(6) }
-
-        val nameBytes = name.toByteArray(Charsets.UTF_8)
-
-        // OOB 格式：2字节头 + 6字节 MAC（倒序）+ 可选名称
-        val payload = ByteArray(2 + 6 + nameBytes.size)
-        payload[0] = 0
-        payload[1] = 0
-        System.arraycopy(macBytes.reversedArray(), 0, payload, 2, 6)
-        if (nameBytes.isNotEmpty()) {
-            System.arraycopy(nameBytes, 0, payload, 8, nameBytes.size)
-        }
-
-        val record = NdefRecord(
-            NdefRecord.TNF_MIME_MEDIA,
-            "application/vnd.bluetooth.ep.oob".toByteArray(StandardCharsets.US_ASCII),
-            ByteArray(0),
-            payload
-        )
-        return NdefMessage(record)
+        handleWriteOnTag(tag)
     }
 
     private fun isNdefCompatible(tag: Tag): Boolean {
@@ -876,7 +476,9 @@ class MainActivity : ComponentActivity() {
         Ndef.get(tag)?.use { ndef ->
             ndef.connect()
             if (!ndef.isWritable) throw IOException("标签不可写")
-            if (ndef.maxSize < message.toByteArray().size) throw IOException("内容超出标签容量")
+            if (ndef.maxSize < message.byteArrayLength) {
+                throw IOException(getString(R.string.write_tag_capacity_error, message.byteArrayLength, ndef.maxSize))
+            }
             ndef.writeNdefMessage(message)
         } ?: throw IOException("标签不支持NDEF写入")
     }
@@ -1155,6 +757,7 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
         // 记录卡模拟状态，Activity 重建时恢复，避免 reader mode 重新抢占
         outState.putString(STATE_WRITE_STATE, writeState.name)
+        pendingWriteMessage?.let { outState.putByteArray(STATE_PENDING_NDEF, it.toByteArray()) }
     }
 
     override fun onPause() {
@@ -1172,9 +775,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (currentWriteMode != WriteMode.IDLE) {
+        if (pendingWriteMessage != null) {
             handleWriteIntent(intent)
-        } else {
+        } else if (writeState == WriteState.IDLE) {
             handleReadIntent(intent)
         }
     }
@@ -1182,18 +785,18 @@ class MainActivity : ComponentActivity() {
     // ---- ReaderMode 统一回调：读卡 + 写卡 ----
 
     private val tagCallback = NfcAdapter.ReaderCallback { tag ->
-        if (currentWriteMode != WriteMode.IDLE) {
+        if (pendingWriteMessage != null) {
             handleWriteOnTag(tag)
             return@ReaderCallback
         }
+        if (writeState != WriteState.IDLE) return@ReaderCallback
         // Reader Mode 接管标签，AAR 只交给解析器展示，避免系统按包名启动应用。
         // 读卡：优先用自定义 AID 直连。
         // 小米 HyperOS 会把 NFC Forum T4T AID(D2760000850101) 写死在 NFC 控制器的路由表里指向 SE，
         // 标准 NDEF 路径会被系统"碰一碰"抢占，只有自定义 AID 才会路由到本应用的 HCE 服务。
         val hceResult = tryReadHceEmulatedCard(tag)
         if (hceResult != null) {
-            tagInfo = hceResult.first
-            tagContent = hceResult.second
+            displayReadResult(listOf(hceResult), tag, isEmulated = true)
             Log.i(TAG, "Read HCE via IsoDep (custom AID)")
             return@ReaderCallback
         }
@@ -1201,6 +804,7 @@ class MainActivity : ComponentActivity() {
         val ndef = Ndef.get(tag)
         if (ndef == null) {
             Log.w(TAG, "No NDEF tech and custom AID read returned nothing: $tag")
+            displayReadResult(emptyList(), tag)
             return@ReaderCallback
         }
         try {
@@ -1208,32 +812,27 @@ class MainActivity : ComponentActivity() {
             val message = ndef.ndefMessage
             ndef.close()
             if (message != null) {
-                tagInfo = getString(R.string.format_tag_info, tag.toString())
-                tagContent = parseNdefMessages(listOf(message))
+                displayReadResult(listOf(message), tag)
                 Log.i(TAG, "Read NDEF via reader mode")
             } else {
                 Log.w(TAG, "NDEF message is null: $tag")
+                displayReadResult(emptyList(), tag)
             }
         } catch (e: Exception) {
             Log.w(TAG, "NDEF read failed", e)
+            displayReadResult(emptyList(), tag, noticeResId = R.string.reader_read_failed)
             try { ndef.close() } catch (_: Exception) {}
         }
     }
 
     /** 在 readerMode 回调中执行写卡操作 */
     private fun handleWriteOnTag(tag: Tag) {
-        if (currentWriteMode == WriteMode.IDLE) return
+        val message = pendingWriteMessage ?: return
+        if (writeState != WriteState.WAITING_FOR_CARD) return
+        pendingWriteMessage = null
+        writeState = WriteState.WRITING
+        writeStatusMessage = getString(R.string.status_writing)
         try {
-            val message: NdefMessage = when (currentWriteMode) {
-                WriteMode.TEXT -> createTextNdefMessage(inputText)
-                WriteMode.URL -> createUriNdefMessage(inputText)
-                WriteMode.WIFI -> createWifiNdefMessage(wifiSsid, wifiPassword, wifiEncryption, wifiAuth)
-                WriteMode.BLUETOOTH -> createBluetoothNdefMessage(btMac, btName)
-                WriteMode.APPLICATION -> createApplicationNdefMessage(applicationPackageName)
-                WriteMode.IDLE -> return
-            }
-            writeState = WriteState.WRITING
-            writeStatusMessage = getString(R.string.status_writing)
             if (isNdefCompatible(tag)) {
                 writeNdefMessage(tag, message)
             } else if (NdefFormatable.get(tag) != null) {
@@ -1246,7 +845,7 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             writeState = WriteState.FAILED
             writeStatusMessage = getString(R.string.status_write_failed, e.message)
-            Log.e("NFC", "写入错误", e)
+            Log.e(TAG, "写入错误", e)
         }
     }
 
@@ -1257,9 +856,9 @@ class MainActivity : ComponentActivity() {
      * 控制器的路由表里指向 SE，读到的会是系统"碰一碰"的内容而不是本应用的数据；
      * 私有 AID 未在 SE 路由表中，会被控制器按兜底规则交给 host。
      *
-     * @return (tagInfo, tagContent)；对端不是本应用的模拟卡时返回 null
+     * @return 对端的 NDEF 消息；对端不是本应用的模拟卡时返回 null
      */
-    private fun tryReadHceEmulatedCard(tag: Tag): Pair<String, String>? {
+    private fun tryReadHceEmulatedCard(tag: Tag): NdefMessage? {
         val isoDep = IsoDep.get(tag) ?: return null
         return try {
             isoDep.connect()
@@ -1312,10 +911,8 @@ class MainActivity : ComponentActivity() {
             if (ndefBytes.isEmpty()) return null
 
             val message = NdefMessage(ndefBytes)
-            val info = getString(R.string.format_tag_info, getString(R.string.msg_hce_tag))
-            val content = parseNdefMessages(listOf(message))
             Log.i(TAG, "HCE card read, ${ndefBytes.size} bytes")
-            Pair(info, content)
+            message
         } catch (e: Exception) {
             Log.w(TAG, "HCE read failed, fallback to NDEF", e)
             null

@@ -5,6 +5,7 @@ import android.nfc.cardemulation.HostApduService
 import android.os.Bundle
 import android.util.Log
 import io.github.zyraxi21.nfc.util.HceDataStore
+import io.github.zyraxi21.nfc.util.MAX_EMULATED_NDEF_BYTES
 
 /**
  * NFC Forum Type 4 Tag 的 Host Card Emulation 服务。
@@ -64,7 +65,7 @@ class MyHostApduService : HostApduService() {
         var emulatedData: ByteArray? = null
             private set
 
-        /** 模拟数据的业务类型（TEXT / URL / WIFI / BLUETOOTH / APPLICATION） */
+        /** 单条记录保留原类型名，多条记录使用 MULTI；实际内容始终由 NDEF 消息决定。 */
         @Volatile
         var emulatedDataType: String? = null
             private set
@@ -76,6 +77,7 @@ class MyHostApduService : HostApduService() {
          * 由系统重新绑定启动，届时静态字段已经丢失，必须从磁盘恢复，否则读卡端会读到空内容。
          */
         fun setEmulatedData(context: Context, data: ByteArray?, type: String? = null) {
+            require(data == null || data.size <= MAX_EMULATED_NDEF_BYTES) { "NDEF message exceeds Type 4 Tag capacity" }
             emulatedData = data
             emulatedDataType = type
             HceDataStore.save(context, data, type)
@@ -184,7 +186,8 @@ class MyHostApduService : HostApduService() {
             return "CONN_ACK".toByteArray(Charsets.UTF_8) + SW_OK
         }
 
-        if (header.contentEquals(CMD_READ_EMULATED_DATA)) {
+        // P1P2 是可变偏移量，不能与常量 80030000 比较整个四字节头，否则只能读第一块。
+        if ((commandApdu[0].toInt() and 0xFF) == 0x80 && ins == 0x03) {
             // P1P2 = 读取偏移量，便于读卡端把大于单块上限的 NDEF 消息分块取回
             val offset = (p1 shl 8) or p2
             val data = emulatedDataOrRestore(this) ?: return SW_DATA_INVALID
@@ -221,25 +224,26 @@ class MyHostApduService : HostApduService() {
     /** 构建 NFC Forum Type 4 Tag Capability Container */
     private fun buildCapabilityContainer(): ByteArray {
         val ndefSize = emulatedDataOrRestore(this)?.size ?: 0
-        // Max NDEF size 指 NDEF 消息本身的最大长度（不含 NLEN），至少要能容纳当前内容
-        val maxNdefSize = maxOf(ndefSize, 0x00FF).coerceAtMost(0xFFFE)
+        // 能力容器声明的是整个文件的容量，必须包含两字节 NLEN。
+        // Android 的标准检测会校验 NLEN + 2 <= Max NDEF File Size。
+        val maxFileSize = maxOf(ndefSize + 2, 0x00FF).coerceAtMost(0xFFFE)
 
         return byteArrayOf(
             // CCLEN = 0x000F (15 bytes)
             0x00, 0x0F,
             // Mapping version 2.0
             0x20.toByte(),
-            // MLe (max R-APDU data size) = 0x00FF
-            0x00, 0xFF.toByte(),
+            // MLe 与 readFromFile 实际支持的单块长度一致。
+            0x00, MAX_APDU_DATA.toByte(),
             // MLc (max C-APDU data size) = 0x00FF
             0x00, 0xFF.toByte(),
             // NDEF File Control TLV: T=0x04, L=0x06
             0x04, 0x06,
             // NDEF File ID = E104
             0xE1.toByte(), 0x04,
-            // Max NDEF size (2 bytes)
-            ((maxNdefSize shr 8) and 0xFF).toByte(),
-            (maxNdefSize and 0xFF).toByte(),
+            // Max NDEF File Size（2 bytes，包含 NLEN）
+            ((maxFileSize shr 8) and 0xFF).toByte(),
+            (maxFileSize and 0xFF).toByte(),
             // Read access = always (0x00)
             0x00,
             // Write access = never (0xFF, read-only emulation)

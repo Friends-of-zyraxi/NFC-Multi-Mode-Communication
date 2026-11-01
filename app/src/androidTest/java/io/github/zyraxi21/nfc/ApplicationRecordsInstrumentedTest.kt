@@ -12,6 +12,7 @@ import io.github.zyraxi21.nfc.ui.theme.WriteDataType
 import io.github.zyraxi21.nfc.ui.theme.WriteState
 import io.github.zyraxi21.nfc.util.createApplicationNdefMessage
 import io.github.zyraxi21.nfc.util.loadInstalledApplications
+import io.github.zyraxi21.nfc.util.NfcWriteRecord
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -41,24 +42,27 @@ class ApplicationRecordsInstrumentedTest {
                 WriteCardScreen(
                     writeState = WriteState.IDLE,
                     writeStatusMessage = "",
-                    onWriteText = {}, onWriteUrl = {}, onWriteWifi = { _, _, _, _ -> },
-                    onWriteBluetooth = { _, _ -> },
-                    onWriteApplication = { writtenPackage = it },
-                    onStartEmulation = { type, _, _, _, _, _, _, _, packageName ->
-                        emulatedType = type
-                        emulatedPackage = packageName
+                    onWriteRecords = { writtenPackage = (it.single() as NfcWriteRecord.Application).packageName },
+                    onStartEmulation = {
+                        emulatedType = it.single().type
+                        emulatedPackage = (it.single() as NfcWriteRecord.Application).packageName
                     }
                 )
             }
         }
         selectApplicationType()
+        footer()
         compose.onNodeWithText("写入标签").assertIsNotEnabled()
         compose.onNodeWithText("卡模拟").assertIsNotEnabled()
+        form()
         compose.onNode(hasSetTextAction()).performTextInput("应用名称")
+        footer()
         compose.onNodeWithText("写入标签").assertIsNotEnabled()
+        form()
         compose.onNode(hasSetTextAction()).performTextReplacement(" com.example.target ")
-        compose.onNodeWithText("写入标签").performScrollTo().performClick()
-        compose.onNodeWithText("卡模拟").performScrollTo().performClick()
+        footer()
+        compose.onNodeWithText("写入标签").performClick()
+        compose.onNodeWithText("卡模拟").performClick()
         compose.runOnIdle {
             assertEquals("com.example.target", writtenPackage)
             assertEquals("com.example.target", emulatedPackage)
@@ -78,13 +82,12 @@ class ApplicationRecordsInstrumentedTest {
                 WriteCardScreen(
                     writeState = WriteState.IDLE,
                     writeStatusMessage = "",
-                    onWriteText = {}, onWriteUrl = {}, onWriteWifi = { _, _, _, _ -> },
-                    onWriteBluetooth = { _, _ -> },
-                    onWriteApplication = { writtenPackage = it }
+                    onWriteRecords = { writtenPackage = (it.single() as NfcWriteRecord.Application).packageName }
                 )
             }
         }
         selectApplicationType()
+        compose.onNodeWithTag("write-records").performScrollToNode(hasText("从本机应用中选择"))
         compose.onNodeWithText("从本机应用中选择").performClick()
         compose.onNode(hasSetTextAction() and hasAnyAncestor(isDialog()))
             .performTextInput(context.packageName)
@@ -94,8 +97,17 @@ class ApplicationRecordsInstrumentedTest {
         }
         compose.onNode(applicationRow).performClick()
         compose.onNodeWithText("选择应用程序").assertDoesNotExist()
-        compose.onNodeWithText("写入标签").performScrollTo().performClick()
+        footer()
+        compose.onNodeWithText("写入标签").performClick()
         compose.runOnIdle { assertEquals(context.packageName, writtenPackage) }
+    }
+
+    private fun footer() {
+        compose.onNodeWithTag("write-records").performScrollToNode(hasText("写入标签"))
+    }
+
+    private fun form() {
+        compose.onNodeWithTag("write-records").performScrollToNode(hasSetTextAction())
     }
 
     private fun selectApplicationType() {

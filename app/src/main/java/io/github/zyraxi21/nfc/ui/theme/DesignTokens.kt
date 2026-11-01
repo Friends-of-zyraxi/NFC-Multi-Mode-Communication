@@ -36,6 +36,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -621,16 +623,21 @@ fun FluentText(
     color: Color = AppTheme.textPrimary,
     centered: Boolean = true,
     maxLines: Int = Int.MAX_VALUE,
-    overflow: TextOverflow = TextOverflow.Clip
+    overflow: TextOverflow = TextOverflow.Clip,
+    fontFamily: FontFamily? = null,
+    onTextLayout: (TextLayoutResult) -> Unit = {},
 ) {
+    val textStyle = style.style()
     BasicText(
         text = text,
-        style = style.style().copy(
+        style = textStyle.copy(
             color = color,
+            fontFamily = fontFamily ?: textStyle.fontFamily,
             textAlign = if (centered) TextAlign.Center else TextAlign.Start
         ),
         maxLines = maxLines,
         overflow = overflow,
+        onTextLayout = onTextLayout,
         modifier = modifier.fillMaxWidth()
     )
 }
@@ -641,7 +648,7 @@ fun FluentText(
  * 用于替换各页面里 `padding(16.dp)` + `fillMaxWidth(0.85f)` 这类散落的宽度魔法值：
  * 文字与控件的左右边界统一由 [LocalPageGutter] 决定，不再贴屏。
  *
- * 默认水平居中：本工程要求界面文字全部居中，因此让列本身居中承载，
+ * 页面标题与表单默认水平居中，因此让列本身居中承载，
  * 子项再用 `fillMaxWidth()` 撑满内容宽度，居中效果才稳定。
  */
 @Composable
