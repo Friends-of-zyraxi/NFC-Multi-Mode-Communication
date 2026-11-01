@@ -246,8 +246,7 @@
 
     <!-- 写卡 - 提示文本 -->
     <string name="hint_text_format">格式：直接输入文字内容</string>
-    <string name="hint_url_format">格式：http:// 或 https:// 开头</string>
-    <string name="hint_bt_format">写入蓝牙 OOB 配对数据</string>
+    <string name="hint_url_format">以 http:// 或 https:// 开头</string>
     <string name="hint_application_format">选择应用或手动填写包名。</string>
     <string name="placeholder_application_package">com.example.app</string>
     <string name="msg_no_applications">没有找到匹配的应用</string>

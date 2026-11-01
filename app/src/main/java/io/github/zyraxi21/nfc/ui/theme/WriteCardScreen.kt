@@ -350,7 +350,6 @@ private fun WriteRecordEditor(
         WriteDataType.TEXT -> {
             FluentTextField(draft.textInput, { onChange(draft.copy(textInput = it)) },
                 stringResource(R.string.label_text_content), hintText = FormDefaults.TEXT)
-            FluentText(stringResource(R.string.hint_text_format), FluentTextStyle.Caption1, color = AppTheme.textHint)
         }
         WriteDataType.URL -> {
             FluentTextField(draft.textInput, { onChange(draft.copy(textInput = it)) },
@@ -393,14 +392,12 @@ private fun WriteRecordEditor(
                 stringResource(R.string.label_bt_mac), hintText = FormDefaults.BT_MAC)
             FluentTextField(draft.btName, { onChange(draft.copy(btName = it)) },
                 stringResource(R.string.label_bt_name), hintText = FormDefaults.BT_NAME)
-            FluentText(stringResource(R.string.hint_bt_format), FluentTextStyle.Caption1, color = AppTheme.textHint)
         }
         WriteDataType.APPLICATION -> {
             FluentButton(onClick = onPickApplication, text = stringResource(R.string.button_select_application),
                 style = ButtonStyle.OutlinedButton, modifier = Modifier.fillMaxWidth().heightIn(min = PageMetrics.minTouchTarget))
             FluentTextField(draft.applicationPackageName, { onChange(draft.copy(applicationPackageName = it)) },
                 stringResource(R.string.label_application_package), hintText = stringResource(R.string.placeholder_application_package))
-            FluentText(stringResource(R.string.hint_application_format), FluentTextStyle.Caption1, color = AppTheme.textHint)
         }
     }
     val error = draft.toRecord().validationError()
