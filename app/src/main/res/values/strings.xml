@@ -88,7 +88,7 @@
     <!-- ================================================================== -->
     <string name="reader_title">读取 NFC 标签</string>
     <string name="reader_check_nfc">检查 NFC 状态</string>
-    <string name="reader_scan_hint">将标签贴近手机背面</string>
+    <string name="reader_scan_hint">将标签贴近手机 NFC 区域</string>
     <string name="reader_display_hint">读取后，标签中的每条内容会分别显示在这里。</string>
     <string name="reader_supported_formats">支持文本、网址、Wi-Fi、蓝牙和应用程序</string>
     <string name="reader_tag_title">NFC 标签</string>
@@ -125,6 +125,27 @@
     <string name="reader_field_uid">标签 UID</string>
     <string name="reader_field_tech">通信技术</string>
     <string name="reader_field_capacity">NDEF 容量</string>
+    <string name="reader_field_tag_type">标签类型</string>
+    <string name="reader_field_chip_family">芯片系列（根据标签特征识别）</string>
+    <string name="reader_field_atqa">ATQA（寻卡响应）</string>
+    <string name="reader_field_sak">SAK（选卡响应）</string>
+    <string name="reader_field_physical_memory">物理存储容量</string>
+    <string name="reader_field_memory_layout">存储结构</string>
+    <string name="reader_sector_layout">%1$d 个扇区，每区 %2$d 块，每块 %3$d 字节</string>
+    <string name="reader_field_ndef_format">NDEF 存储格式</string>
+    <string name="reader_field_can_lock">支持设为只读（系统接口）</string>
+    <string name="reader_field_historical_bytes">ISO-DEP 历史字节</string>
+    <string name="reader_field_higher_response">ISO-DEP 高层响应</string>
+    <string name="reader_field_application_data">NFC-B 应用数据</string>
+    <string name="reader_field_protocol_info">NFC-B 协议信息</string>
+    <string name="reader_field_system_code">NFC-F 系统代码</string>
+    <string name="reader_field_manufacturer_data">NFC-F 厂商参数</string>
+    <string name="reader_field_dsfid">DSFID（数据存储格式标识）</string>
+    <string name="reader_field_response_flags">NFC-V 响应标志</string>
+    <string name="reader_yes">是</string>
+    <string name="reader_no">否</string>
+    <string name="reader_exact_bytes">%1$d 字节</string>
+    <string name="reader_used_capacity">NDEF 已用 / 容量：%1$d / %2$d 字节</string>
     <string name="reader_field_access">写入状态</string>
     <string name="reader_field_record_type">记录类型</string>
     <string name="reader_field_record_id">记录 ID</string>

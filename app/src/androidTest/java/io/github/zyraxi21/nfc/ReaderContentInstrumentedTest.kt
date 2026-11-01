@@ -53,7 +53,7 @@ class ReaderContentInstrumentedTest {
                 )
             }
         }
-        compose.onNodeWithText("将标签贴近手机背面").assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.reader_scan_hint)).assertIsDisplayed()
         compose.onNodeWithText("支持文本、网址、Wi-Fi、蓝牙和应用程序").assertIsDisplayed()
         capture("reader-empty.png")
         compose.onNodeWithText("检查 NFC 状态").performClick()
@@ -148,6 +148,25 @@ class ReaderContentInstrumentedTest {
         compose.onNodeWithText("old tag").assertDoesNotExist()
         compose.onNodeWithText(context.getString(R.string.reader_no_records)).assertIsDisplayed()
         compose.onNodeWithText("复制全部内容").assertDoesNotExist()
+    }
+
+    @Test
+    fun tagMetadataCanBeBrowsedWithoutNdefAndResetsOnTheNextScan() {
+        val result = parseNfcReadResult(context, emptyList(), discoveryTag()).copy(messageBytes = 233)
+        val state = mutableStateOf(result)
+        compose.setContent {
+            MyApplicationTheme(dynamicColor = false) { NFCReaderScreen(state.value, false) }
+        }
+        compose.onNodeWithText("NDEF 已用 / 容量：233 / 716 字节").assertIsDisplayed()
+        compose.onNodeWithText("ATQA（寻卡响应）").assertDoesNotExist()
+        compose.onNodeWithText("查看标签信息").performClick()
+        listOf("0x0004", "0x08", "1024 字节", "16 个扇区，每区 4 块，每块 16 字节", "NXP MIFARE Classic", "支持设为只读（系统接口）", "可写入").forEach {
+            compose.onNodeWithTag("reader-results").performScrollToNode(hasText(it))
+            compose.onNodeWithText(it).assertIsDisplayed()
+        }
+        compose.runOnIdle { state.value = result.copy(tagId = "new tag") }
+        compose.onNodeWithText("查看标签信息").assertIsDisplayed()
+        compose.onNodeWithText("0x0004").assertDoesNotExist()
     }
 
     @Test

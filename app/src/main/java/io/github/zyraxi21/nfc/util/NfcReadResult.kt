@@ -19,6 +19,7 @@ data class NfcReadResult(
     val capacity: Int? = null,
     val isWritable: Boolean? = null,
     @param:StringRes val noticeResId: Int? = null,
+    val tagDetails: List<NfcRecordField> = emptyList(),
 )
 
 enum class NfcRecordKind(@param:StringRes val titleResId: Int) {
@@ -66,7 +67,7 @@ fun parseNfcReadResult(
     isEmulated: Boolean = false,
     @StringRes noticeResId: Int? = null,
 ): NfcReadResult {
-    val ndef = tag?.let(Ndef::get)
+    val ndef = tag?.let { runCatching { Ndef.get(it) }.getOrNull() }
     return NfcReadResult(
         records = messages.flatMap { message -> message.records.map { parseRecord(context, it) } },
         messageBytes = messages.sumOf { it.byteArrayLength },
@@ -76,6 +77,7 @@ fun parseNfcReadResult(
         capacity = if (isEmulated) null else ndef?.maxSize,
         isWritable = if (isEmulated) null else ndef?.isWritable,
         noticeResId = noticeResId,
+        tagDetails = tag?.let { readNfcTagDetails(context, it) }.orEmpty(),
     )
 }
 

@@ -1,6 +1,5 @@
 package io.github.zyraxi21.nfc.ui.theme
 
-import android.text.format.Formatter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -59,6 +59,8 @@ fun NFCReaderScreen(
     val clipboard = LocalClipboardManager.current
     // 扫描新标签时回到列表顶部，并清除上一张标签的展开状态。
     key(result) {
+        var tagDetailsExpanded by rememberSaveable { mutableStateOf(false) }
+        val tagFields = remember(result, context) { result?.let { tagInformationFields(it, context) }.orEmpty() }
         LazyColumn(
             modifier = Modifier.fillMaxSize().testTag("reader-results"),
             contentPadding = PaddingValues(horizontal = LocalPageGutter.current, vertical = FluentSpacing.mPlus),
@@ -105,14 +107,25 @@ fun NFCReaderScreen(
                                 }
                             }
                         }
-                        if (result.records.isNotEmpty()) {
+                        if (result.capacity != null || result.records.isNotEmpty()) {
                             FluentText(
-                                text = stringResource(R.string.reader_message_size, Formatter.formatShortFileSize(context, result.messageBytes.toLong())),
+                                text = if (result.capacity != null) stringResource(R.string.reader_used_capacity, result.messageBytes, result.capacity)
+                                    else stringResource(R.string.reader_message_size, stringResource(R.string.reader_exact_bytes, result.messageBytes)),
                                 style = FluentTextStyle.Caption1,
                                 color = AppTheme.textSecondary,
                                 centered = false,
                             )
                         }
+                    }
+                }
+                if (tagFields.isNotEmpty()) {
+                    item {
+                        ReaderAction(stringResource(if (tagDetailsExpanded) R.string.reader_tag_details_hide else R.string.reader_tag_details_show)) {
+                            tagDetailsExpanded = !tagDetailsExpanded
+                        }
+                    }
+                    if (tagDetailsExpanded) {
+                        items(tagFields) { ReaderField(it) }
                     }
                 }
                 if (result.records.isEmpty()) {
@@ -130,9 +143,6 @@ fun NFCReaderScreen(
                 }
                 itemsIndexed(result.records, key = { index, _ -> index }) { index, record ->
                     ReaderRecordCard(record, index)
-                }
-                if (result.tagId != null || result.technologies.isNotEmpty()) {
-                    item { ReaderTagDetails(result) }
                 }
             }
         }
@@ -273,24 +283,15 @@ private fun ReaderValue(value: String, monospaced: Boolean) {
     }
 }
 
-@Composable
-private fun ReaderTagDetails(result: NfcReadResult) {
-    val context = LocalContext.current
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(FluentSpacing.mPlus)) {
-        ReaderAction(stringResource(if (expanded) R.string.reader_tag_details_hide else R.string.reader_tag_details_show)) {
-            expanded = !expanded
-        }
-        if (expanded) {
-            result.tagId?.let { ReaderField(NfcRecordField(R.string.reader_field_uid, it, true)) }
-            if (result.technologies.isNotEmpty()) ReaderField(NfcRecordField(R.string.reader_field_tech, result.technologies.joinToString(" / ")))
-            result.capacity?.let {
-                ReaderField(NfcRecordField(R.string.reader_field_capacity, Formatter.formatShortFileSize(context, it.toLong())))
-            }
-            result.isWritable?.let {
-                ReaderField(NfcRecordField(R.string.reader_field_access, stringResource(if (it) R.string.reader_tag_writable else R.string.reader_tag_readonly)))
-            }
-        }
+private fun tagInformationFields(result: NfcReadResult, context: android.content.Context): List<NfcRecordField> = buildList {
+    result.tagId?.let { add(NfcRecordField(R.string.reader_field_uid, it, true)) }
+    if (result.technologies.isNotEmpty()) add(NfcRecordField(R.string.reader_field_tech, result.technologies.joinToString(" / ")))
+    addAll(result.tagDetails)
+    result.capacity?.let {
+        add(NfcRecordField(R.string.reader_field_capacity, context.getString(R.string.reader_exact_bytes, it)))
+    }
+    result.isWritable?.let {
+        add(NfcRecordField(R.string.reader_field_access, context.getString(if (it) R.string.reader_tag_writable else R.string.reader_tag_readonly)))
     }
 }
 
