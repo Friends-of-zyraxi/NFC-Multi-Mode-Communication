@@ -1,8 +1,6 @@
 package io.github.zyraxi21.nfc.cast
 
 import android.view.Surface
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -20,14 +18,13 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.microsoft.fluentui.theme.token.controlTokens.ButtonStyle
 import io.github.zyraxi21.nfc.R
 import io.github.zyraxi21.nfc.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 
-/** 以画面为中心的接收页；横屏压缩控制区，全屏时只保留退出全屏入口。 */
+/** 以画面为中心的接收页；全屏控件支持点按唤出和空闲淡出。 */
 @Composable
 internal fun CastScreen(
     state: CastUiState,
@@ -142,33 +139,8 @@ internal fun CastScreen(
                     FluentButton(onClick = onStopVideo, text = stringResource(R.string.cast_stop_sharing), style = ButtonStyle.OutlinedButton, modifier = Modifier.fillMaxWidth())
                 }
                 CastStage.RECEIVING -> {
-                    // 全屏以纯黑色补边，非全屏保留当前页面的主题背景。
-                    Box(Modifier.weight(1f).fillMaxWidth().background(if (full) Color.Black else AppTheme.canvas).testTag("cast-viewport"), contentAlignment = Alignment.Center) {
-                        val width = state.width
-                        val height = state.height
-                        val ratio = if (width > 0 && height > 0) width.toFloat() / height else 9f / 16
-                        val surfaceCallback by rememberUpdatedState(onSurface)
-                        if (isPreview) {
-                            Box(Modifier.aspectRatio(ratio).testTag("cast-video"), contentAlignment = Alignment.Center) {
-                                FluentText(stringResource(R.string.cast_preview_video), FluentTextStyle.Body1, color = if (full) Color.White else AppTheme.textPrimary)
-                            }
-                        } else AndroidView(
-                            factory = { context -> SurfaceView(context).apply {
-                                holder.addCallback(object : SurfaceHolder.Callback {
-                                    override fun surfaceCreated(holder: SurfaceHolder) { surfaceCallback(holder.surface) }
-                                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) { surfaceCallback(holder.surface) }
-                                    override fun surfaceDestroyed(holder: SurfaceHolder) { surfaceCallback(null) }
-                                })
-                            } },
-                            modifier = Modifier.aspectRatio(ratio).testTag("cast-video"),
-                        )
-                        if (!state.hasFrame) FluentText(stringResource(R.string.cast_waiting_frame), FluentTextStyle.Body1, color = if (full) Color.White else AppTheme.textPrimary)
-                        if (full) Box(Modifier.align(Alignment.TopEnd)
-                            .windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.systemBars))
-                            .padding(FluentSpacing.m)) {
-                            FluentButton(onClick = { full = false }, text = stringResource(R.string.cast_exit_fullscreen))
-                        }
-                    }
+                    CastReceiverViewport(state, full, onSurface, onExitFullscreen = { full = false },
+                        modifier = Modifier.weight(1f).fillMaxWidth())
                     if (!full) Row(Modifier.fillMaxWidth().padding(FluentSpacing.mPlus), horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
                         FluentButton(onClick = { full = true }, text = stringResource(R.string.cast_enter_fullscreen), modifier = Modifier.weight(1f))
                         FluentButton(onClick = onStopVideo, text = stringResource(R.string.cast_stop_sharing), style = ButtonStyle.OutlinedButton, modifier = Modifier.weight(1f))

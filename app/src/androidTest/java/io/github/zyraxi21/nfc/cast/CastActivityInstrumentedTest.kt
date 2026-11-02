@@ -52,6 +52,9 @@ class CastActivityInstrumentedTest {
                 }
             }
             checkWindow()
+            if (compose.onAllNodesWithText("退出全屏").fetchSemanticsNodes().isEmpty()) {
+                compose.onNodeWithTag("cast-viewport").performTouchInput { click(center) }
+            }
             compose.onNodeWithText("退出全屏").assertIsDisplayed()
         } finally { compose.runOnIdle {
             compose.activity.setFullscreen(false)

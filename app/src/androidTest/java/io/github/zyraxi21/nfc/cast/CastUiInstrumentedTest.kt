@@ -94,6 +94,48 @@ class CastUiInstrumentedTest {
         compose.runOnIdle { assertEquals(1, stopped) }
     }
 
+    @Test fun fullscreenControlsFadeOutAndTapRestoresThemWithANewTimeout() {
+        compose.setContent { MyApplicationTheme {
+            screen(CastUiState(CastStage.RECEIVING, width = 1280, height = 720, hasFrame = true))
+        } }
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithText("全屏查看").performClick()
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithTag("cast-fullscreen-controls").assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(2500)
+        compose.onNodeWithTag("cast-fullscreen-controls").assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(1000)
+        compose.onNodeWithTag("cast-fullscreen-controls").assertDoesNotExist()
+        compose.onNodeWithTag("cast-viewport").performTouchInput { click(center) }
+        compose.mainClock.advanceTimeBy(200)
+        compose.onNodeWithText("退出全屏").assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(2500)
+        compose.onNodeWithText("退出全屏").assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(1000)
+        compose.onNodeWithTag("cast-fullscreen-controls").assertDoesNotExist()
+        compose.onNodeWithTag("cast-viewport").performTouchInput { click(center) }
+        compose.mainClock.advanceTimeBy(200)
+        compose.onNodeWithText("退出全屏").performClick()
+        compose.mainClock.advanceTimeBy(350)
+        compose.onNodeWithText("全屏查看").assertIsDisplayed()
+    }
+
+    @Test fun holdingTheScreenPreventsControlsFromTimingOut() {
+        compose.setContent { MyApplicationTheme {
+            screen(CastUiState(CastStage.RECEIVING, width = 1280, height = 720, hasFrame = true))
+        } }
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithText("全屏查看").performClick()
+        compose.mainClock.advanceTimeBy(2500)
+        compose.onNodeWithTag("cast-viewport").performTouchInput { down(center) }
+        try {
+            compose.mainClock.advanceTimeBy(4500)
+            compose.onNodeWithText("退出全屏").assertIsDisplayed()
+        } finally {
+            compose.onNodeWithTag("cast-viewport").performTouchInput { up() }
+        }
+    }
+
     @Test fun receiverUsesPageBackgroundOutsideFullscreenInBothThemes() {
         val dark = mutableStateOf(false)
         var expectedBackground = 0
