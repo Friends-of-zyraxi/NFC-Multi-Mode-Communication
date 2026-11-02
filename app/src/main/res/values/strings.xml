@@ -382,4 +382,10 @@
 
     <!-- P2P - 权限（UI 卡片） -->
     <string name="p2p_text_permission_required">需要附近设备权限；使用 Android 17 及以上系统时，还需要本地网络权限。</string>
+    <string name="cast_invite_type">屏幕共享邀请</string>
+    <string name="cast_field_session">会话</string>
+    <string name="cast_field_expiry">有效期至</string>
+    <string name="cast_join_invite">加入屏幕共享</string>
+    <!-- Android 17 起仅允许 NFC 系统服务向分发入口投递 NFC Intent。旧系统无此权限。 -->
+    <string name="nfc_dispatch_permission" translatable="false"></string>
 </resources>

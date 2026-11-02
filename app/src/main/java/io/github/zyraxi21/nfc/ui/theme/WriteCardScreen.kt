@@ -14,6 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import io.github.zyraxi21.nfc.cast.CastActivity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -164,8 +167,21 @@ fun WriteCardScreen(
     onWriteRecords: (List<NfcWriteRecord>) -> Unit,
     onStartEmulation: (List<NfcWriteRecord>) -> Unit = {},
     onCancelWrite: () -> Unit = {},
+    onOpenScreenShare: (() -> Unit)? = null,
 ) {
-    RecordEditorScreen(writeState, writeStatusMessage, onWriteRecords, onStartEmulation, onCancelWrite)
+    val context = LocalContext.current
+    RecordEditorScreen(writeState, writeStatusMessage, onWriteRecords, onStartEmulation, onCancelWrite,
+        headerContent = {
+            FluentCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(FluentSpacing.mPlus), verticalArrangement = Arrangement.spacedBy(FluentSpacing.s)) {
+                    FluentText("屏幕共享邀请", FluentTextStyle.Body1Strong)
+                    FluentText("用卡模拟邀请另一台设备，连接后选择投屏方向。", FluentTextStyle.Caption1, color = AppTheme.textSecondary)
+                    FluentButton(text = "打开屏幕共享", style = ButtonStyle.OutlinedButton, enabled = writeState == WriteState.IDLE,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = PageMetrics.minTouchTarget),
+                        onClick = { onOpenScreenShare?.invoke() ?: context.startActivity(Intent(context, CastActivity::class.java)) })
+                }
+            }
+        })
 }
 
 /** NFC 和 Nearby 共用类型、列表、校验及编辑状态，只有提交方式不同。 */

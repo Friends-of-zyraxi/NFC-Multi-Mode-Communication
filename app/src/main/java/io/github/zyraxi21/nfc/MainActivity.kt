@@ -46,6 +46,10 @@ import io.github.zyraxi21.nfc.util.MAX_NEARBY_NDEF_BYTES
 import io.github.zyraxi21.nfc.util.NfcReadResult
 import io.github.zyraxi21.nfc.util.parseNfcReadResult
 import io.github.zyraxi21.nfc.util.HceDataStore
+import io.github.zyraxi21.nfc.util.RecordAction
+import io.github.zyraxi21.nfc.cast.CastActivity
+import io.github.zyraxi21.nfc.cast.CastSessionService
+import io.github.zyraxi21.nfc.cast.RecordNearbyLink
 import io.github.zyraxi21.nfc.util.InvalidWriteRecordException
 import io.github.zyraxi21.nfc.util.MAX_EMULATED_NDEF_BYTES
 import io.github.zyraxi21.nfc.util.NfcWriteRecord
@@ -87,6 +91,10 @@ class MainActivity : ComponentActivity() {
     private var p2pConnectionState by mutableStateOf(ConnectionState.DISCONNECTED)
     private var receivedNearbyResult by mutableStateOf<NfcReadResult?>(null)
     private var currentEndpointId: String? = null
+    private var screenSharingRequested by mutableStateOf(false)
+    private val screenSharingInvitations = object : RecordNearbyLink.InvitationListener {
+        override fun onScreenSharingRequested() { screenSharingRequested = true }
+    }
     private val outgoingNearbyPayloads = mutableSetOf<Long>()
     private var isBluetoothEnabled by mutableStateOf(false)
     private var isWiFiEnabled by mutableStateOf(false)
@@ -160,6 +168,7 @@ class MainActivity : ComponentActivity() {
 
         // 初始化 Nearby Connections 客户端
         connectionsClient = Nearby.getConnectionsClient(this)
+        RecordNearbyLink.bind(this, recordConnectionCallbacks, recordPayloadCallbacks, screenSharingInvitations)
         refreshNearbyRadioStatus()
 
         // 初始化 NFC 适配器
@@ -202,7 +211,11 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme {
                 val coroutineScope = rememberCoroutineScope()
                 snackbarHostState = remember { SnackbarState() }
-                val recordActionHandler = rememberRecordActionHandler { showSnackbar(it) }
+                val systemRecordActionHandler = rememberRecordActionHandler { showSnackbar(it) }
+                val recordActionHandler: (RecordAction) -> Unit = { action ->
+                    if (action is RecordAction.ScreenShare) openScreenSharing(action.inviteBytes)
+                    else systemRecordActionHandler(action)
+                }
 
                 // ---- App 级 NFC 自检：启动时检查一次，正常则静默隐藏按钮 ----
                 var nfcChecked by remember { mutableStateOf(false) }
@@ -278,6 +291,7 @@ class MainActivity : ComponentActivity() {
                             writeStatusMessage = writeStatusMessage,
                             onWriteRecords = ::armWriteRecords,
                             onStartEmulation = ::startRecordEmulation,
+                            onOpenScreenShare = { openScreenSharing() },
                             onCancelWrite = {
                                 writeState = WriteState.IDLE
                                 writeStatusMessage = ""
@@ -306,7 +320,7 @@ class MainActivity : ComponentActivity() {
                                     nfcAdapter?.disableReaderMode(this@MainActivity)
                                 }
                                 WriteState.IDLE -> {
-                                    nfcAdapter?.enableReaderMode(
+                                    if (!CastSessionService.ownsNearby) nfcAdapter?.enableReaderMode(
                                         this@MainActivity, tagCallback,
                                         NfcAdapter.FLAG_READER_NFC_A or
                                         NfcAdapter.FLAG_READER_NFC_B or
@@ -333,7 +347,9 @@ class MainActivity : ComponentActivity() {
                             onStopDiscovery = { stopDiscovery() },
                             onDisconnect = { disconnectFromEndpoint() },
                             onSendRecords = { records ->
-                                if (currentEndpointId != null && p2pConnectionState == ConnectionState.CONNECTED) {
+                                if (CastSessionService.ownsNearby) {
+                                    showSnackbar("请先结束屏幕共享连接")
+                                } else if (currentEndpointId != null && p2pConnectionState == ConnectionState.CONNECTED) {
                                     sendNearbyRecords(currentEndpointId!!, records)
                                 } else {
                                     showToast(getString(R.string.toast_not_connected))
@@ -342,6 +358,8 @@ class MainActivity : ComponentActivity() {
                             hasPermissions = hasNearbyPermissions,
                             onRequestPermissions = { permLauncher.launch(nearbyPermissions) },
                             onRecordAction = recordActionHandler,
+                            onOpenScreenShare = ::openConnectedScreenSharing,
+                            screenSharingRequested = screenSharingRequested,
                         )
                     },
                     snackbarHostState = snackbarHostState
@@ -432,6 +450,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun armWriteRecords(records: List<NfcWriteRecord>) {
+        if (CastSessionService.ownsNearby) { showSnackbar("请先结束屏幕共享连接"); return }
         if (writeState != WriteState.IDLE) return
         val message = prepareWriteMessage(records) ?: return
         pendingWriteMessage = message
@@ -440,6 +459,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startRecordEmulation(records: List<NfcWriteRecord>) {
+        if (CastSessionService.ownsNearby) { showSnackbar("请先结束屏幕共享连接"); return }
         if (writeState != WriteState.IDLE) return
         val message = prepareWriteMessage(records) ?: return
         if (message.byteArrayLength > MAX_EMULATED_NDEF_BYTES) {
@@ -498,11 +518,13 @@ class MainActivity : ComponentActivity() {
     //  这些函数保持不变）
     // ...
     // Nearby Connections 核心回调
-    private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
+    private val connectionLifecycleCallback get() = RecordNearbyLink.lifecycle
+
+    private val recordConnectionCallbacks = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
             Log.d("Nearby", "连接被发起: $endpointId")
             p2pConnectionState = ConnectionState.CONNECTING
-            connectionsClient.acceptConnection(endpointId, payloadCallback)
+            connectionsClient.acceptConnection(endpointId, RecordNearbyLink.payloads)
             showToast(getString(R.string.toast_accepting_connection))
         }
 
@@ -513,6 +535,7 @@ class MainActivity : ComponentActivity() {
                     p2pConnectionState = ConnectionState.CONNECTED
                     currentEndpointId = endpointId
                     receivedNearbyResult = null
+                    screenSharingRequested = false
                     showToast(getString(R.string.toast_connection_success))
                 }
                 ConnectionsStatusCodes.STATUS_CONNECTION_REJECTED -> {
@@ -538,11 +561,12 @@ class MainActivity : ComponentActivity() {
             p2pConnectionState = ConnectionState.DISCONNECTED
             currentEndpointId = null
             outgoingNearbyPayloads.clear()
+            screenSharingRequested = false
             showSnackbar(getString(R.string.toast_connection_disconnected))
         }
     }
 
-    private val payloadCallback = object : PayloadCallback() {
+    private val recordPayloadCallbacks = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             payload.asBytes()?.let { bytes ->
                 val result = parseNearbyPayload(this@MainActivity, bytes)
@@ -637,6 +661,10 @@ class MainActivity : ComponentActivity() {
 
     // 启动广告模式
     private fun startAdvertising() {
+        if (CastSessionService.ownsNearby) {
+            showSnackbar("请先结束屏幕共享连接")
+            return
+        }
         if (!checkNearbyPermissions()) {
             pendingP2PAction = { startAdvertising() }
             requestNearbyPermissions?.invoke()
@@ -674,6 +702,10 @@ class MainActivity : ComponentActivity() {
 
     // 启动发现模式
     private fun startDiscovery() {
+        if (CastSessionService.ownsNearby) {
+            showSnackbar("请先结束屏幕共享连接")
+            return
+        }
         if (!checkNearbyPermissions()) {
             pendingP2PAction = { startDiscovery() }
             requestNearbyPermissions?.invoke()
@@ -731,6 +763,7 @@ class MainActivity : ComponentActivity() {
 
     // 断开与当前端点的连接
     private fun disconnectFromEndpoint() {
+        RecordNearbyLink.reset()
         connectionsClient.stopAllEndpoints()
         p2pConnectionState = ConnectionState.DISCONNECTED
         currentEndpointId = null
@@ -757,8 +790,45 @@ class MainActivity : ComponentActivity() {
     // Activity 生命周期
     // =======================================================================
 
+    private fun openScreenSharing(inviteBytes: ByteArray? = null) {
+        if (!CastSessionService.ownsNearby) {
+            connectionsClient.stopAdvertising()
+            connectionsClient.stopDiscovery()
+            disconnectFromEndpoint()
+        }
+        startActivity(Intent(this, CastActivity::class.java).apply {
+            inviteBytes?.let { putExtra(CastActivity.EXTRA_INVITE, it) }
+        })
+    }
+
+    private fun openConnectedScreenSharing() {
+        if (RecordNearbyLink.peer?.endpoint != currentEndpointId || currentEndpointId == null) {
+            showSnackbar("请先在端对端页面建立连接")
+            return
+        }
+        screenSharingRequested = false
+        RecordNearbyLink.reserveForCast()
+        startActivity(Intent(this, CastActivity::class.java).putExtra(CastActivity.EXTRA_EXISTING_CONNECTION, true))
+    }
+
     override fun onResume() {
         super.onResume()
+        val recordPeer = RecordNearbyLink.peer
+        if (recordPeer != null) {
+            currentEndpointId = recordPeer.endpoint
+            p2pConnectionState = ConnectionState.CONNECTED
+        } else if (p2pConnectionState == ConnectionState.CONNECTED) {
+            currentEndpointId = null
+            p2pConnectionState = ConnectionState.DISCONNECTED
+        }
+        if (CastSessionService.ownsNearby) {
+            if (recordPeer == null) {
+                p2pConnectionState = ConnectionState.DISCONNECTED
+                currentEndpointId = null
+                outgoingNearbyPayloads.clear()
+            }
+            return // 等待邀请时保持被动 HCE，避免主界面的 ReaderMode 抢占卡模拟。
+        }
         refreshNearbyRadioStatus()
         if (p2pConnectionState != ConnectionState.DISCONNECTED && !hasNearbyRadioEnabled()) {
             connectionsClient.stopAdvertising()
@@ -796,7 +866,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        connectionsClient.stopAllEndpoints()
+        if (!CastSessionService.ownsNearby && !RecordNearbyLink.handoffPending) {
+            RecordNearbyLink.reset(); connectionsClient.stopAllEndpoints()
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

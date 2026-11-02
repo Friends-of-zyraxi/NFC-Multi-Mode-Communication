@@ -7,6 +7,7 @@ import android.provider.Settings
 
 /** 仅描述用户可点击的操作，解析记录不会执行任何操作。 */
 sealed interface RecordAction {
+    data class ScreenShare(val inviteBytes: ByteArray) : RecordAction
     data class Web(val uri: String) : RecordAction
     data class Application(val packageName: String) : RecordAction
     data class Bluetooth(val mac: String) : RecordAction

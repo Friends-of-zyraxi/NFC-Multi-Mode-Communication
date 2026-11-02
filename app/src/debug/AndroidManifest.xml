@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- 仅供仪器测试验证系统录屏生命周期，不进入正式版。 -->
+        <service android:name=".cast.ProjectionTestService" android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+    </application>
+</manifest>

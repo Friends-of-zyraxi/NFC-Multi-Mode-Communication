@@ -8,6 +8,7 @@ import android.nfc.tech.Ndef
 import androidx.annotation.StringRes
 import io.github.zyraxi21.nfc.R
 import java.nio.ByteBuffer
+import io.github.zyraxi21.nfc.cast.CastInvite
 
 /** 保留记录边界和原始载荷，界面不再从格式化字符串中反推字段。 */
 data class NfcReadResult(
@@ -28,6 +29,7 @@ enum class NfcRecordKind(@param:StringRes val titleResId: Int) {
     WIFI(R.string.data_type_wifi),
     BLUETOOTH(R.string.data_type_bluetooth),
     APPLICATION(R.string.data_type_application),
+    SCREEN_SHARE(R.string.cast_invite_type),
     DATA(R.string.reader_type_data),
     EMPTY(R.string.reader_type_empty),
 }
@@ -94,6 +96,7 @@ private fun parseRecord(context: Context, record: NdefRecord): NfcReadRecord {
         record.tnf == NdefRecord.TNF_EXTERNAL_TYPE && type == "android.com:pkg" -> NfcRecordKind.APPLICATION
         mimeType == "application/vnd.wfa.wsc" -> NfcRecordKind.WIFI
         mimeType == "application/vnd.bluetooth.ep.oob" -> NfcRecordKind.BLUETOOTH
+        mimeType == CastInvite.MIME -> NfcRecordKind.SCREEN_SHARE
         else -> NfcRecordKind.DATA
     }
     val fields = mutableListOf<NfcRecordField>()
@@ -102,6 +105,13 @@ private fun parseRecord(context: Context, record: NdefRecord): NfcReadRecord {
     var warning: Int? = null
     try {
         when (kind) {
+            NfcRecordKind.SCREEN_SHARE -> {
+                val invite = CastInvite.decode(payload)
+                fields += NfcRecordField(R.string.cast_field_session, invite.session.take(8), monospaced = true)
+                fields += NfcRecordField(R.string.cast_field_expiry,
+                    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(invite.expiresAt)))
+                actions += RecordAction.ScreenShare(payload.copyOf())
+            }
             NfcRecordKind.TEXT -> {
                 require(payload.isNotEmpty())
                 val status = payload[0].toInt() and 0xFF

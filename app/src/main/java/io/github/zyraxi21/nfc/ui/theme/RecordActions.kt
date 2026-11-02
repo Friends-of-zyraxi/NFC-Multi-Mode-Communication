@@ -24,6 +24,8 @@ import androidx.compose.ui.text.AnnotatedString
 import com.microsoft.fluentui.theme.token.controlTokens.ButtonStyle
 import io.github.zyraxi21.nfc.R
 import io.github.zyraxi21.nfc.util.RecordAction
+import io.github.zyraxi21.nfc.cast.CastActivity
+import io.github.zyraxi21.nfc.cast.CastInvite
 import io.github.zyraxi21.nfc.util.isValidApplicationPackageName
 import io.github.zyraxi21.nfc.util.webRecordIntent
 import io.github.zyraxi21.nfc.util.wifiRecordIntent
@@ -35,6 +37,7 @@ internal fun RecordActionButtons(actions: List<RecordAction>, onAction: ((Record
     Column(verticalArrangement = Arrangement.spacedBy(FluentSpacing.s)) {
         actions.forEachIndexed { index, action ->
             val label = when (action) {
+                is RecordAction.ScreenShare -> R.string.cast_join_invite
                 is RecordAction.Web -> R.string.record_open_web
                 is RecordAction.Application -> R.string.record_open_application
                 is RecordAction.Bluetooth -> R.string.record_connect_bluetooth
@@ -105,6 +108,10 @@ internal fun rememberRecordActionHandler(onMessage: ((String) -> Unit)? = null):
     return { action ->
         safely {
             when (action) {
+                is RecordAction.ScreenShare -> {
+                    val invite = CastInvite.decode(action.inviteBytes)
+                    context.startActivity(Intent(context, CastActivity::class.java).putExtra(CastActivity.EXTRA_INVITE, invite.encode()))
+                }
                 is RecordAction.Web -> context.startActivity(webRecordIntent(action))
                 is RecordAction.Application -> {
                     require(isValidApplicationPackageName(action.packageName))

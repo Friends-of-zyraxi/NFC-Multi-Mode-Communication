@@ -84,9 +84,22 @@ class MyHostApduService : HostApduService() {
         }
 
         /** 读取当前模拟数据；进程内缓存为空时尝试从磁盘恢复 */
-        private fun emulatedDataOrRestore(context: Context): ByteArray? {
+        internal fun emulatedDataOrRestore(context: Context): ByteArray? {
+            if (emulatedDataType == io.github.zyraxi21.nfc.cast.CastSessionService.INVITE_TYPE) {
+                val valid = runCatching {
+                    emulatedData?.let { android.nfc.NdefMessage(it) }?.let {
+                        io.github.zyraxi21.nfc.cast.inviteFromMessages(listOf(it))
+                    } != null
+                }.getOrDefault(false)
+                if (!valid) { setEmulatedData(context, null); return null }
+            }
             emulatedData?.let { return it }
             val restored = HceDataStore.load(context) ?: return null
+            if (restored.second == io.github.zyraxi21.nfc.cast.CastSessionService.INVITE_TYPE) {
+                // 临时投屏邀请不跨进程恢复；会话和 Nearby 监听都已不存在。
+                HceDataStore.save(context, null, null)
+                return null
+            }
             emulatedData = restored.first
             emulatedDataType = restored.second
             return restored.first

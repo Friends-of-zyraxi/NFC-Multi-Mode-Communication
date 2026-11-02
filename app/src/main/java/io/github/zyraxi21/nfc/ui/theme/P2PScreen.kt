@@ -41,6 +41,8 @@ fun P2PScreen(
     hasPermissions: Boolean,
     onRequestPermissions: () -> Unit,
     onRecordAction: ((RecordAction) -> Unit)? = null,
+    onOpenScreenShare: (() -> Unit)? = null,
+    screenSharingRequested: Boolean = false,
 ) {
     val editorState = rememberSaveableStateHolder()
     var permissionRequested by rememberSaveable { mutableStateOf(false) }
@@ -77,6 +79,12 @@ fun P2PScreen(
                 }
                 ConnectionState.CONNECTED -> {
                     FluentText(stringResource(R.string.p2p_text_connected), FluentTextStyle.Body2Strong, color = AppTheme.success)
+                    if (screenSharingRequested) FluentText("对方邀请你进入屏幕共享。进入后核对两端验证码，再选择投屏方向。",
+                        FluentTextStyle.Body2, color = AppTheme.brand)
+                    onOpenScreenShare?.let { open ->
+                        FluentButton(text = if (screenSharingRequested) "接受并进入屏幕共享" else "进入屏幕共享", onClick = open,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = PageMetrics.minTouchTarget).testTag("p2p-screen-sharing"))
+                    }
                     FluentButton(text = stringResource(R.string.p2p_button_disconnect), onClick = onDisconnect,
                         style = ButtonStyle.OutlinedButton, modifier = Modifier.fillMaxWidth())
                 }

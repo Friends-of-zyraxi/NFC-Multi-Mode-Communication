@@ -4,6 +4,10 @@
 
     <uses-permission android:name="android.permission.NFC" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Nearby Connections 权限。minSdk = 34，API 31 以下的旧权限
          （BLUETOOTH / BLUETOOTH_ADMIN / ACCESS_*_LOCATION）已无生效场景，不再声明。 -->
     <!-- CHANGE_WIFI_STATE 不在此列，Nearby Connections 仍需要，见下方声明。 -->
@@ -51,7 +55,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- ACTION_NDEF_DISCOVERED 文本过滤器 -->
+        </activity>
+
+        <activity
+            android:name=".cast.NfcDispatchActivity"
+            android:exported="true"
+            android:permission="@string/nfc_dispatch_permission"
+            android:excludeFromRecents="true"
+            android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/vnd.io.github.zyraxi21.nfc.screen" />
+            </intent-filter>
+
+            <!-- 其他标签仍进入主界面的只读解析流程。 -->
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
 
@@ -96,6 +114,16 @@
                 android:name="android.nfc.cardemulation.host_apdu_service"
                 android:resource="@xml/apduservice" />
         </service>
+        <activity
+            android:name=".cast.CastActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|smallestScreenSize"
+            android:theme="@style/Theme.MyApplication" />
+        <service
+            android:name=".cast.CastSessionService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|mediaProjection" />
     </application>
 
 </manifest>
