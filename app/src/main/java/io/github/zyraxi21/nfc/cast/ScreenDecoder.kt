@@ -3,10 +3,13 @@ package io.github.zyraxi21.nfc.cast
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.os.SystemClock
+import android.os.Handler
+import android.os.HandlerThread
 import android.view.Surface
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.Executors
+import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -18,11 +21,15 @@ internal class ScreenDecoder(
     private val onFrame: () -> Unit,
     private val onError: (String) -> Unit,
     private val requestKey: () -> Unit,
+    private val onRendered: (Long) -> Unit = {},
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val target = AtomicReference<Surface?>(null)
     private val worker = Executors.newSingleThreadExecutor()
-    private var codec: MediaCodec? = null // 仅在 worker 内访问
+    private val decodeThread = HandlerThread("screen-decoder").apply { start() }
+    private val handler = Handler(decodeThread.looper)
+    private val queued = Semaphore(2)
+    private var codec: MediaCodec? = null // 仅在 decodeThread 内访问
     private var codecSurface: Surface? = null
     private var format: VideoPacket.Config? = null
     private var needsKey = true
@@ -33,11 +40,17 @@ internal class ScreenDecoder(
         if (surface != null && !closed.get()) requestKey()
     }
 
-    fun start() { worker.execute {
+    fun start() {
+        handler.post(::drainContinuously)
+        worker.execute {
         try {
             require(VideoWire.header(input) == expectedId)
             while (!closed.get()) {
-                when (val packet = VideoWire.read(input)) {
+                val packet = VideoWire.read(input)
+                queued.acquire()
+                if (closed.get()) { queued.release(); break }
+                handler.post { try {
+                if (!closed.get()) when (packet) {
                     is VideoPacket.Config -> {
                         releaseCodec(); format = packet; onSize(packet.width, packet.height)
                     }
@@ -50,17 +63,28 @@ internal class ScreenDecoder(
                         }
                     }
                 }
+                } catch (_: Exception) { if (!closed.get()) onError("视频解码失败，请重新开始共享") }
+                finally { queued.release() } }
             }
         } catch (_: Exception) { if (!closed.get()) onError("视频接收中断或设备无法解码，请重新开始共享") }
-        finally { releaseCodec(); runCatching { input.close() } }
+        finally { runCatching { input.close() } }
     } }
+
+    private fun drainContinuously() {
+        if (closed.get()) return
+        try { codec?.let { drain(it) } } catch (_: Exception) {
+            if (target.get()?.isValid != true) { releaseCodec(); requestKey() }
+            else onError("视频解码器异常，请重新开始共享")
+        }
+        handler.postDelayed(::drainContinuously, 10)
+    }
 
     private fun decode(frame: VideoPacket.Frame) {
         val surface = target.get()?.takeIf { it.isValid }
         if (surface !== codecSurface) releaseCodec()
-        if (surface == null) return
+        if (surface == null) { onRendered(frame.timeUs); return }
         val config = format ?: error("缺少视频参数")
-        if (needsKey && !frame.key) return
+        if (needsKey && !frame.key) { onRendered(frame.timeUs); return }
         if (codec == null) {
             val next = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
             codec = next
@@ -88,16 +112,27 @@ internal class ScreenDecoder(
 
     private fun drain(decoder: MediaCodec) {
         val info = MediaCodec.BufferInfo()
+        var latestIndex = -1
+        var latestTime = 0L
         while (!closed.get()) {
             val index = decoder.dequeueOutputBuffer(info, 0)
             when {
                 index >= 0 -> {
-                    decoder.releaseOutputBuffer(index, true)
-                    if (!reportedFrame) { reportedFrame = true; onFrame() }
+                    // 参考 scrcpy 的最新画面策略：只渲染当前批次最新的已解码帧。
+                    if (latestIndex >= 0) {
+                        decoder.releaseOutputBuffer(latestIndex, false)
+                        onRendered(latestTime)
+                    }
+                    latestIndex = index; latestTime = info.presentationTimeUs
                 }
                 index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> Unit
-                else -> return
+                else -> break
             }
+        }
+        if (latestIndex >= 0) {
+            decoder.releaseOutputBuffer(latestIndex, !closed.get())
+            onRendered(latestTime)
+            if (!reportedFrame) { reportedFrame = true; onFrame() }
         }
     }
 
@@ -109,5 +144,6 @@ internal class ScreenDecoder(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         target.set(null); runCatching { input.close() }; worker.shutdownNow()
+        handler.post { releaseCodec(); decodeThread.quitSafely() }
     }
 }

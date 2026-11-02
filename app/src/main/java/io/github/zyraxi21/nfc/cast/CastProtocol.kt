@@ -72,7 +72,7 @@ internal data class CastControl(val type: String, val id: String = "", val value
             val json = JSONObject(bytes.decodeToString(throwOnInvalidSequence = true))
             require(json.getInt("v") == 1)
             val type = json.getString("type")
-            require(type in setOf("join", "auth", "verify", "role", "accept", "reject", "stop", "key"))
+            require(type in setOf("join", "auth", "verify", "role", "accept", "reject", "stop", "key", "ack"))
             val id = json.getString("id")
             require(validId(id))
             val value = json.getString("value")

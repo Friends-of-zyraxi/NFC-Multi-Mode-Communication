@@ -12,6 +12,7 @@ import android.os.HandlerThread
 import android.os.SystemClock
 import android.view.Surface
 import java.io.OutputStream
+import java.io.BufferedOutputStream
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -32,6 +33,7 @@ internal class ScreenEncoder(
     private val handler = Handler(thread.looper)
     private val writer = Executors.newSingleThreadExecutor()
     private val packets = ArrayBlockingQueue<VideoPacket>(8)
+    private val flow = VideoFlowControl()
     private var codec: MediaCodec? = null
     private var surface: Surface? = null
     private var display: VirtualDisplay? = null
@@ -39,7 +41,7 @@ internal class ScreenEncoder(
     private var height = 0
     private var config: VideoPacket.Config? = null
     private var waitingForKey = true
-    @Volatile private var lastWrite = SystemClock.elapsedRealtime()
+    private var appliedBitrate = flow.bitrate
 
     private val callback = object : MediaProjection.Callback() {
         override fun onStop() { if (!closed.get()) onError("系统已停止屏幕共享") }
@@ -52,11 +54,11 @@ internal class ScreenEncoder(
     fun start(initialWidth: Int, initialHeight: Int) {
         writer.execute {
             try {
-                VideoWire.header(output, streamId)
+                val buffered = BufferedOutputStream(output, 32 * 1024)
+                VideoWire.header(buffered, streamId)
                 while (!closed.get()) {
                     val packet = packets.poll(500, TimeUnit.MILLISECONDS) ?: continue
-                    VideoWire.write(output, packet)
-                    lastWrite = SystemClock.elapsedRealtime()
+                    VideoWire.write(buffered, packet)
                 }
             } catch (_: Exception) { if (!closed.get()) onError("视频发送中断，请重新开始共享") }
         }
@@ -74,7 +76,7 @@ internal class ScreenEncoder(
 
     private fun configure(sourceWidth: Int, sourceHeight: Int) {
         require(sourceWidth > 0 && sourceHeight > 0)
-        val scale = min(1.0, min(1280.0 / maxOf(sourceWidth, sourceHeight), 720.0 / minOf(sourceWidth, sourceHeight)))
+        val scale = min(1.0, min(960.0 / maxOf(sourceWidth, sourceHeight), 540.0 / minOf(sourceWidth, sourceHeight)))
         // 16 像素对齐兼容硬件 AVC 编码器；轻微尺寸取整由虚拟显示负责缩放。
         val w = maxOf(16, (sourceWidth * scale).toInt() / 16 * 16)
         val h = maxOf(16, (sourceHeight * scale).toInt() / 16 * 16)
@@ -84,17 +86,26 @@ internal class ScreenEncoder(
         runCatching { oldCodec?.stop() }; runCatching { oldCodec?.release() }
         surface?.release(); surface = null
         width = w; height = h; config = null; waitingForKey = true; packets.clear()
+        flow.resetFrames(); appliedBitrate = flow.bitrate
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, 2_000_000)
+            setInteger(MediaFormat.KEY_BIT_RATE, appliedBitrate)
             setInteger(MediaFormat.KEY_FRAME_RATE, 15)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
             setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, 15f)
             setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
-            setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 1_000_000L / 15)
+            // 参考 scrcpy：静止画面仅补发少量帧，不按目标帧率持续重复整屏。
+            setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100_000L)
+            setInteger(MediaFormat.KEY_PRIORITY, 0)
+            setInteger(MediaFormat.KEY_LATENCY, 1)
         }
         val next = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         codec = next
+        // WebRTC 使用 CBR 约束突发流量；仅在当前编码器明确支持时启用。
+        if (next.codecInfo.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC).encoderCapabilities
+                ?.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR) == true) {
+            format.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+        }
         next.setCallback(object : MediaCodec.Callback() {
             override fun onInputBufferAvailable(codec: MediaCodec, index: Int) = Unit
             override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
@@ -115,6 +126,10 @@ internal class ScreenEncoder(
                         require(info.size <= VideoWire.MAX_FRAME)
                         val key = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
                         if (config != null && (!waitingForKey || key)) {
+                            if (!flow.reserve(info.presentationTimeUs.coerceAtLeast(0), SystemClock.elapsedRealtime())) {
+                                waitingForKey = true
+                                return
+                            }
                             val bytes = ByteArray(info.size)
                             requireNotNull(codec.getOutputBuffer(index)).apply {
                                 position(info.offset); limit(info.offset + info.size); get(bytes)
@@ -123,7 +138,7 @@ internal class ScreenEncoder(
                                 if (key) waitingForKey = false
                             } else {
                                 // 丢弃整个未发送 GOP，等待新的关键帧，避免解码损坏及延迟无限增长。
-                                packets.clear(); config?.let { packets.offer(it) }; waitingForKey = true
+                                packets.clear(); flow.resetFrames(); config?.let { packets.offer(it) }; waitingForKey = true
                                 requestKeyFrame()
                             }
                         }
@@ -142,16 +157,32 @@ internal class ScreenEncoder(
     }
 
     fun requestKeyFrame() { handler.post {
+        flow.resetFrames()
         if (!closed.get()) runCatching { codec?.setParameters(Bundle().apply {
             putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
         }) }
     } }
 
+    fun acknowledge(timeUs: Long) { handler.post {
+        if (!closed.get() && flow.acknowledge(timeUs, SystemClock.elapsedRealtime())) {
+            updateBitrate()
+            if (waitingForKey) runCatching { codec?.setParameters(Bundle().apply {
+                putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
+            }) }
+        }
+    } }
+
+    private fun updateBitrate() {
+        if (appliedBitrate != flow.bitrate) runCatching {
+            codec?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, flow.bitrate) })
+            appliedBitrate = flow.bitrate
+        }
+    }
+
     private fun watchdog() {
         if (closed.get()) return
-        if (SystemClock.elapsedRealtime() - lastWrite > 15_000) {
-            onError("连接速度不足或视频发送超时，请重新连接")
-        } else handler.postDelayed(::watchdog, 3000)
+        if (flow.congested(SystemClock.elapsedRealtime())) { flow.reduce(); updateBitrate() }
+        handler.postDelayed(::watchdog, 2000)
     }
 
     override fun close() {

@@ -62,7 +62,16 @@ class ProjectionLoopbackInstrumentedTest {
         val thread = HandlerThread("projection-test-images").apply { start() }
         val id = UUID.randomUUID().toString()
         var encoder: ScreenEncoder? = null
-        val decoder = ScreenDecoder(input, id, { _, _ -> }, {}, { error.set(it) }, { encoder?.requestKeyFrame() })
+        val acknowledgedFrames = java.util.concurrent.atomic.AtomicInteger(0)
+        val continuousFrames = CountDownLatch(15)
+        val decoder = ScreenDecoder(input, id, { _, _ -> }, {}, { error.set(it) }, { encoder?.requestKeyFrame() },
+            onRendered = { pts ->
+                // 延迟反馈模拟慢链路，验证两帧窗口仍持续推进，不会等下一包才能解码。
+                Handler(thread.looper).postDelayed({
+                    encoder?.acknowledge(pts)
+                    acknowledgedFrames.incrementAndGet(); continuousFrames.countDown()
+                }, 250)
+            })
         var bound = false
         try {
             compose.setContent { Box(Modifier.fillMaxSize().background(Color(0xFF0F6CBD))) }
@@ -94,6 +103,7 @@ class ProjectionLoopbackInstrumentedTest {
             val metrics = compose.activity.windowManager.maximumWindowMetrics.bounds
             encoder.start(metrics.width(), metrics.height())
             assertTrue("录屏竖屏未显示：${error.get()}", portrait.await(12, TimeUnit.SECONDS))
+            assertTrue("慢速反馈下视频未持续推进：${error.get()}", continuousFrames.await(15, TimeUnit.SECONDS))
             shell("wm user-rotation lock 1")
             assertTrue("同一录屏会话旋转后未显示：${error.get()}", landscape.await(12, TimeUnit.SECONDS))
             assertNull(error.get())

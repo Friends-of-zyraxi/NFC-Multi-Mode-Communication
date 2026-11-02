@@ -45,8 +45,10 @@ class VideoLoopbackInstrumentedTest {
         try {
             decoder.attach(readers[0].surface); decoder.start()
             VideoWire.header(output, id)
-            portrait.forEach { VideoWire.write(output, it) }
+            // 只发送参数集和单个关键帧，随后保持连接但不写数据；解码器仍必须输出画面。
+            portrait.take(2).forEach { VideoWire.write(output, it) }
             assertTrue("竖屏没有输出图像：${error.get()}", firstImage.await(8, TimeUnit.SECONDS))
+            portrait.drop(2).forEach { VideoWire.write(output, it) }
             decoder.attach(null)
             decoder.attach(readers[1].surface)
             landscape.forEach { VideoWire.write(output, it) }

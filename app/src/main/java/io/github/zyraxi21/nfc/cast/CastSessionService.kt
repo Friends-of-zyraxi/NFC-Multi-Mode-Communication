@@ -200,6 +200,7 @@ class CastSessionService : Service() {
                             onFrame = { main.post { if (proposal == streamId) mutableState.value = state.value.copy(hasFrame = true) } },
                             onError = { message -> main.post { if (proposal == streamId) stopVideo(message) } },
                             requestKey = { main.post { if (proposal == streamId) send(CastControl("key", streamId)) } },
+                            onRendered = { pts -> main.post { if (proposal == streamId) send(CastControl("ack", streamId, pts.toString())) } },
                         ).also { it.attach(targetSurface); it.start() }
                     }
                     else -> client.cancelPayload(payload.id)
@@ -242,6 +243,7 @@ class CastSessionService : Service() {
             "reject" -> if (proposal == message.id) stopVideo("对方已拒绝本次共享", notifyPeer = false)
             "stop" -> if (proposal == message.id) stopVideo("本次共享已结束", notifyPeer = false)
             "key" -> if (proposal == message.id) encoder?.requestKeyFrame()
+            "ack" -> if (proposal == message.id) message.value.toLongOrNull()?.takeIf { it >= 0 }?.let { encoder?.acknowledge(it) }
         }
     }
 

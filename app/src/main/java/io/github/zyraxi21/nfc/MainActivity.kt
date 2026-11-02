@@ -672,7 +672,7 @@ class MainActivity : ComponentActivity() {
         }
         if (!ensureNearbyRadiosReady()) return
         connectionsClient.stopAdvertising() // 防止 STATUS_ALREADY_ADVERTISING
-        val advertisingOptions = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build()
+        val advertisingOptions = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).build()
         connectionsClient.startAdvertising(
             getString(R.string.p2p_device_name),
             serviceId,
@@ -713,7 +713,7 @@ class MainActivity : ComponentActivity() {
         }
         if (!ensureNearbyRadiosReady()) return
         connectionsClient.stopDiscovery() // 防止重复启动
-        val discoveryOptions = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build()
+        val discoveryOptions = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).build()
         connectionsClient.startDiscovery(
             serviceId,
             object : EndpointDiscoveryCallback() {
