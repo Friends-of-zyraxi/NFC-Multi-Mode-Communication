@@ -81,6 +81,7 @@ class UpdateUiTest {
             val host = InstrumentationRegistry.getInstrumentation().targetContext
             onNodeWithText(host.getString(R.string.update_check)).performScrollTo().performClick()
             onNodeWithTag("update-dialog").assertIsDisplayed()
+            onNodeWithText(host.getString(R.string.update_asset, asset.name, "1024 字节")).assertIsDisplayed()
             onNode(hasText("改进下载进度", substring = true) and hasAnyAncestor(hasTestTag("update-dialog")))
                 .assertIsDisplayed()
             assertEquals(0, downloader.enqueues)

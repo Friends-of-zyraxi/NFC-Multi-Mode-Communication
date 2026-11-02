@@ -3,7 +3,6 @@ package io.github.zyraxi21.nfc.ui.theme
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
-import android.text.format.Formatter
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
@@ -235,7 +234,8 @@ private fun UpdateAvailableDialog(state: UpdateUiState.Available, vm: UpdateView
         if (state.asset == null) {
             FluentText(stringResource(R.string.update_no_compatible_apk), FluentTextStyle.Body2, color = AppTheme.warning)
         } else {
-            FluentText(stringResource(R.string.update_asset, state.asset.name, Formatter.formatFileSize(context, state.asset.sizeBytes)),
+            FluentText(stringResource(R.string.update_asset, state.asset.name,
+                stringResource(R.string.reader_exact_bytes, state.asset.sizeBytes)),
                 FluentTextStyle.Caption1, color = AppTheme.textSecondary)
         }
         FluentText(stringResource(R.string.update_release_notes), FluentTextStyle.Body2Strong)

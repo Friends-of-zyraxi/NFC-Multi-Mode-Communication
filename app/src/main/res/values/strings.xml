@@ -94,7 +94,7 @@
     <string name="reader_tag_title">NFC 标签</string>
     <string name="reader_record_count">%1$d 条记录</string>
     <string name="reader_record_number">记录 %1$d</string>
-    <string name="reader_payload_bytes">载荷 %1$d B</string>
+    <string name="reader_payload_bytes">载荷 %1$d 字节</string>
     <string name="reader_message_size">内容大小：%1$s</string>
     <string name="reader_copy_all">复制全部内容</string>
     <string name="reader_copy_record">复制内容</string>
@@ -103,7 +103,7 @@
     <string name="reader_raw_show">查看原始数据</string>
     <string name="reader_raw_hide">收起原始数据</string>
     <string name="reader_raw_copy">复制完整载荷</string>
-    <string name="reader_raw_preview">仅预览前 %1$d B，复制可获取完整载荷。</string>
+    <string name="reader_raw_preview">仅预览前 %1$d 字节，复制可获取完整载荷。</string>
     <string name="reader_tag_details_show">查看标签信息</string>
     <string name="reader_tag_details_hide">收起标签信息</string>
     <string name="reader_type_uri">网址 / URI</string>
@@ -228,13 +228,13 @@
     <string name="write_move_up">上移</string>
     <string name="write_move_down">下移</string>
     <string name="write_empty_records">还没有记录，请先添加需要写入的内容。</string>
-    <string name="write_records_summary">%1$d 条记录，内容共 %2$d B</string>
+    <string name="write_records_summary">%1$d 条记录，内容共 %2$d 字节</string>
     <string name="write_records_incomplete">请先完成所有记录的填写。</string>
     <string name="write_record_invalid">此记录需要检查</string>
     <string name="write_invalid_record">记录 %1$d：%2$s</string>
-    <string name="write_emulation_too_large">内容超过卡模拟上限（%1$d B），可减少内容后重试。</string>
-    <string name="write_tag_capacity_error">内容需要 %1$d B，标签容量为 %2$d B。</string>
-    <string name="status_tap_records">已准备 %1$d 条记录（%2$d B），请将标签贴近手机背面。</string>
+    <string name="write_emulation_too_large">内容超过卡模拟上限（%1$d 字节），可减少内容后重试。</string>
+    <string name="write_tag_capacity_error">内容需要 %1$d 字节，标签容量为 %2$d 字节。</string>
+    <string name="status_tap_records">已准备 %1$d 条记录（%2$d 字节），请将标签贴近手机背面。</string>
 
     <!-- 写卡 - 数据类型 -->
     <string name="data_type_text">文本</string>

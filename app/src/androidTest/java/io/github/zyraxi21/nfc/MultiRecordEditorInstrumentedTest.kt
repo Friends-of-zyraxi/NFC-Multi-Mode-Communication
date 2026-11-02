@@ -94,7 +94,7 @@ class MultiRecordEditorInstrumentedTest {
         footer()
         compose.onNodeWithText("写入标签").assertIsEnabled()
         compose.onNodeWithText("卡模拟").assertIsNotEnabled()
-        compose.onNodeWithText("内容超过卡模拟上限（65532 B），可减少内容后重试。").assertExists()
+        compose.onNodeWithText("内容超过卡模拟上限（65532 字节），可减少内容后重试。").assertExists()
     }
 
     @Test

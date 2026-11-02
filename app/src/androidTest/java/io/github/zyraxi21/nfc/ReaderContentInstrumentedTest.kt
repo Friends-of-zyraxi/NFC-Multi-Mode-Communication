@@ -121,7 +121,7 @@ class ReaderContentInstrumentedTest {
         compose.onNodeWithTag("reader-raw-0").assertDoesNotExist()
         compose.onNodeWithTag("reader-raw-toggle-0").performClick()
         compose.onNodeWithTag("reader-results").performScrollToNode(hasText("复制完整载荷"))
-        compose.onNodeWithText("仅预览前 256 B，复制可获取完整载荷。").assertExists()
+        compose.onNodeWithText("仅预览前 256 字节，复制可获取完整载荷。").assertExists()
         compose.onNodeWithText("复制完整载荷").performClick()
         assertClipboard(bytes.toDisplayHex())
         compose.runOnIdle {
