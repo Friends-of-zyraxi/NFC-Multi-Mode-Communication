@@ -18,8 +18,8 @@ android {
         applicationId = "io.github.zyraxi21.nfc"
         minSdk = 34
         targetSdk = 37
-        versionCode = 202611021
-        versionName = "2026.11.02.1"
+        versionCode = 202611022
+        versionName = "2026.11.02.2"
         buildConfigField("boolean", "APP_UPDATES_ENABLED", "true")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
