@@ -25,6 +25,7 @@ import com.microsoft.fluentui.theme.token.controlTokens.ButtonStyle
 import io.github.zyraxi21.nfc.R
 import io.github.zyraxi21.nfc.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.seconds
 
 /** 以画面为中心的接收页；横屏压缩控制区，全屏时只保留退出全屏入口。 */
 @Composable
@@ -70,49 +71,14 @@ internal fun CastScreen(
             if (state.stage != CastStage.IDLE) FluentButton(onClick = onEnd, text = stringResource(R.string.cast_disconnect), style = ButtonStyle.TextButton,
                 modifier = Modifier.align(Alignment.CenterEnd))
         }
-        if (receiving) {
-            // 比例不同时保留完整画面，剩余区域始终为纯黑色。
-            Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black).testTag("cast-viewport"), contentAlignment = Alignment.Center) {
-                val width = state.width
-                val height = state.height
-                BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    val ratio = if (width > 0 && height > 0) width.toFloat() / height else 9f / 16
-                    val displayWidth = minOf(maxWidth, maxHeight * ratio)
-                    val displayHeight = displayWidth / ratio
-                    val surfaceCallback by rememberUpdatedState(onSurface)
-                    if (isPreview) {
-                        Box(Modifier.size(displayWidth, displayHeight).testTag("cast-video"), contentAlignment = Alignment.Center) {
-                            FluentText(stringResource(R.string.cast_preview_video), FluentTextStyle.Body1, color = Color.White)
-                        }
-                    } else AndroidView(
-                        factory = { context -> SurfaceView(context).apply {
-                            holder.addCallback(object : SurfaceHolder.Callback {
-                                override fun surfaceCreated(holder: SurfaceHolder) { surfaceCallback(holder.surface) }
-                                override fun surfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) { surfaceCallback(holder.surface) }
-                                override fun surfaceDestroyed(holder: SurfaceHolder) { surfaceCallback(null) }
-                            })
-                        } },
-                        modifier = Modifier.size(displayWidth, displayHeight).testTag("cast-video"),
-                    )
-                }
-                if (!state.hasFrame) FluentText(stringResource(R.string.cast_waiting_frame), FluentTextStyle.Body1, color = Color.White)
-                if (full) Box(Modifier.align(Alignment.TopEnd)
-                    .windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.systemBars))
-                    .padding(FluentSpacing.m)) {
-                    FluentButton(onClick = { full = false }, text = stringResource(R.string.cast_exit_fullscreen))
-                }
-            }
-            if (!full) Row(Modifier.fillMaxWidth().padding(FluentSpacing.mPlus), horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
-                FluentButton(onClick = { full = true }, text = stringResource(R.string.cast_enter_fullscreen), modifier = Modifier.weight(1f))
-                FluentButton(onClick = onStopVideo, text = stringResource(R.string.cast_stop_sharing), style = ButtonStyle.OutlinedButton, modifier = Modifier.weight(1f))
-            }
-        } else Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(FluentSpacing.mPlus),
-            verticalArrangement = Arrangement.spacedBy(FluentSpacing.mPlus),
+        Column(
+            Modifier.weight(1f).fillMaxWidth()
+                .then(if (receiving) Modifier else Modifier.verticalScroll(rememberScrollState()).padding(FluentSpacing.mPlus)),
+            verticalArrangement = if (receiving) Arrangement.Top else Arrangement.spacedBy(FluentSpacing.mPlus),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             val message = localMessage ?: state.message
-            message?.let { FluentText(it, FluentTextStyle.Body2, color = AppTheme.danger) }
+            if (!receiving) message?.let { FluentText(it, FluentTextStyle.Body2, color = AppTheme.danger) }
             when (state.stage) {
                 CastStage.IDLE -> if (scanning) {
                     StatusCard(stringResource(R.string.cast_scan_title), stringResource(R.string.cast_scan_description))
@@ -131,7 +97,7 @@ internal fun CastScreen(
                     }
                     if (!isPreview) LaunchedEffect(state.expiresAt) { while (true) {
                         seconds = ((state.expiresAt - System.currentTimeMillis()).coerceAtLeast(0) + 999) / 1000
-                        delay(1000)
+                        delay(1.seconds)
                     } }
                     FluentText(stringResource(R.string.cast_invite_expires, seconds), FluentTextStyle.Caption1, color = AppTheme.textSecondary)
                 }
@@ -175,7 +141,39 @@ internal fun CastScreen(
                     FluentButton(onClick = onHome, text = stringResource(R.string.cast_go_home), modifier = Modifier.fillMaxWidth())
                     FluentButton(onClick = onStopVideo, text = stringResource(R.string.cast_stop_sharing), style = ButtonStyle.OutlinedButton, modifier = Modifier.fillMaxWidth())
                 }
-                CastStage.RECEIVING -> Unit
+                CastStage.RECEIVING -> {
+                    // 比例不同时保留完整画面，剩余区域始终为纯黑色。
+                    Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black).testTag("cast-viewport"), contentAlignment = Alignment.Center) {
+                        val width = state.width
+                        val height = state.height
+                        val ratio = if (width > 0 && height > 0) width.toFloat() / height else 9f / 16
+                        val surfaceCallback by rememberUpdatedState(onSurface)
+                        if (isPreview) {
+                            Box(Modifier.aspectRatio(ratio).testTag("cast-video"), contentAlignment = Alignment.Center) {
+                                FluentText(stringResource(R.string.cast_preview_video), FluentTextStyle.Body1, color = Color.White)
+                            }
+                        } else AndroidView(
+                            factory = { context -> SurfaceView(context).apply {
+                                holder.addCallback(object : SurfaceHolder.Callback {
+                                    override fun surfaceCreated(holder: SurfaceHolder) { surfaceCallback(holder.surface) }
+                                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) { surfaceCallback(holder.surface) }
+                                    override fun surfaceDestroyed(holder: SurfaceHolder) { surfaceCallback(null) }
+                                })
+                            } },
+                            modifier = Modifier.aspectRatio(ratio).testTag("cast-video"),
+                        )
+                        if (!state.hasFrame) FluentText(stringResource(R.string.cast_waiting_frame), FluentTextStyle.Body1, color = Color.White)
+                        if (full) Box(Modifier.align(Alignment.TopEnd)
+                            .windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.systemBars))
+                            .padding(FluentSpacing.m)) {
+                            FluentButton(onClick = { full = false }, text = stringResource(R.string.cast_exit_fullscreen))
+                        }
+                    }
+                    if (!full) Row(Modifier.fillMaxWidth().padding(FluentSpacing.mPlus), horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
+                        FluentButton(onClick = { full = true }, text = stringResource(R.string.cast_enter_fullscreen), modifier = Modifier.weight(1f))
+                        FluentButton(onClick = onStopVideo, text = stringResource(R.string.cast_stop_sharing), style = ButtonStyle.OutlinedButton, modifier = Modifier.weight(1f))
+                    }
+                }
             }
             if (state.stage == CastStage.IDLE) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m, Alignment.CenterHorizontally)) {
