@@ -117,8 +117,7 @@ fun P2PScreen(
     }
     if (connectionState == ConnectionState.CONNECTED && hasPermissions) {
         Column(Modifier.fillMaxSize()) {
-            NearbyMessageTabs(messagePane, receivedResult?.records?.size ?: 0, { messagePane = it },
-                Modifier.padding(horizontal = LocalPageGutter.current, vertical = FluentSpacing.mPlus))
+            NearbyMessageHeader(messagePane, receivedResult?.records?.size ?: 0, { messagePane = it })
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (messagePane == NearbyMessagePane.SEND) editorState.SaveableStateProvider("records") {
                     RecordEditorScreen(WriteState.IDLE, "", onSendRecords, nearbyMode = true, headerContent = controls)
@@ -145,6 +144,16 @@ fun P2PScreen(
                 itemsIndexed(receivedResult.records) { index, record -> ReaderRecordCard(record, index, onRecordAction) }
             }
         }
+    }
+}
+
+@Composable
+private fun NearbyMessageHeader(pane: NearbyMessagePane, receivedCount: Int, onSelect: (NearbyMessagePane) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = LocalPageGutter.current, vertical = FluentSpacing.mPlus),
+        verticalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
+        FluentText(stringResource(R.string.p2p_title), FluentTextStyle.Title3,
+            modifier = Modifier.fillMaxWidth().semantics { heading() })
+        NearbyMessageTabs(pane, receivedCount, onSelect)
     }
 }
 
@@ -195,8 +204,7 @@ private fun PreviewNearbyReceivedPane() {
         NfcWriteRecord.Link("https://example.org")))) }
     MyApplicationTheme(dynamicColor = false) {
         Column(Modifier.fillMaxSize().background(AppTheme.canvas)) {
-            NearbyMessageTabs(NearbyMessagePane.RECEIVED, result.records.size, {},
-                Modifier.padding(FluentSpacing.mPlus))
+            NearbyMessageHeader(NearbyMessagePane.RECEIVED, result.records.size, {})
             Box(Modifier.weight(1f)) { NearbyReceivedPane(result, null) }
         }
     }

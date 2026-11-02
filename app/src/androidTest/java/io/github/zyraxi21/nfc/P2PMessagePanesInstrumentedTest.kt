@@ -39,6 +39,7 @@ class P2PMessagePanesInstrumentedTest {
                 {}, {}, {}, {}, {}, {}, {}, { sent = it }, true, {}, { actions += it })
             }
         } }
+        compose.onNodeWithText(context.getString(R.string.p2p_title)).assertIsDisplayed()
         compose.onNode(hasSetTextAction()).performTextReplacement("outgoing draft")
         compose.runOnIdle { result.value = received("incoming text") }
         compose.onNodeWithTag("p2p-send-tab").assertIsSelected()
@@ -47,10 +48,12 @@ class P2PMessagePanesInstrumentedTest {
         capture("p2p-send.png")
         compose.onNodeWithTag("p2p-received-tab").performClick()
         compose.onNodeWithTag("p2p-received-tab").assertIsSelected()
+        compose.onNodeWithText(context.getString(R.string.p2p_title)).assertIsDisplayed()
         compose.onNodeWithTag("p2p-records").assertDoesNotExist()
         compose.onNode(hasSetTextAction()).assertDoesNotExist()
         compose.onNodeWithTag("p2p-received").performScrollToNode(hasText("incoming text"))
         compose.onNodeWithText("incoming text").assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.p2p_title)).assertIsDisplayed()
         compose.onNodeWithTag("p2p-received").performScrollToIndex(0)
         capture("p2p-received-light.png")
         compose.runOnIdle { dark.value = true }
@@ -59,6 +62,7 @@ class P2PMessagePanesInstrumentedTest {
         compose.onNodeWithText(context.getString(R.string.record_open_web)).performClick()
         compose.runOnIdle { assertEquals(listOf(RecordAction.Web("https://example.org/")), actions) }
         compose.onNodeWithTag("p2p-send-tab").performClick()
+        compose.onNodeWithText(context.getString(R.string.p2p_title)).assertIsDisplayed()
         compose.onNode(hasSetTextAction()).assertTextContains("outgoing draft")
         compose.onNodeWithTag("p2p-records").performScrollToNode(hasText(context.getString(R.string.p2p_button_send)))
         compose.onNodeWithText(context.getString(R.string.p2p_button_send)).performClick()
