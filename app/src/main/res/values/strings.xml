@@ -496,4 +496,5 @@
     <string name="cast_invite_expires">邀请将在 %1$d 秒后失效</string>
     <string name="cast_dimensions">画面尺寸 %1$d × %2$d</string>
     <string name="cast_encoding_target">编码目标 %1$.1f Mbit/s，%2$d fps</string>
+    <string name="cast_preview_video">共享画面预览</string>
 </resources>

@@ -14,6 +14,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import com.microsoft.fluentui.theme.token.controlTokens.ButtonStyle
 import com.microsoft.fluentui.tokenized.progress.CircularProgressIndicator
 import io.github.zyraxi21.nfc.R
@@ -151,5 +153,24 @@ private fun PreviewP2PScreen() {
     MyApplicationTheme {
         P2PScreen(ConnectionState.DISCONNECTED, null, true, true, null,
             {}, {}, {}, {}, {}, {}, {}, {}, true, {})
+    }
+}
+
+internal class ScreenSharingRequestPreviewProvider : PreviewParameterProvider<Boolean> {
+    override val values = sequenceOf(false, true)
+}
+
+@Preview(name = "端对端投屏入口 浅色", showBackground = true, widthDp = 393, heightDp = 852)
+@Preview(name = "端对端投屏入口 深色", showBackground = true, widthDp = 393, heightDp = 852,
+    uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun PreviewP2PScreenSharing(@PreviewParameter(ScreenSharingRequestPreviewProvider::class) requested: Boolean) {
+    MyApplicationTheme(dynamicColor = false) {
+        P2PScreen(connectionState = ConnectionState.CONNECTED, receivedResult = null,
+            isBluetoothEnabled = true, isWiFiEnabled = true, nearbyRadioWarning = null,
+            onEnableBluetooth = {}, onEnableWiFi = {}, onStartAdvertising = {}, onStopAdvertising = {},
+            onStartDiscovery = {}, onStopDiscovery = {}, onDisconnect = {}, onSendRecords = {},
+            hasPermissions = true, onRequestPermissions = {}, onOpenScreenShare = {},
+            screenSharingRequested = requested)
     }
 }

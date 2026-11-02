@@ -1,6 +1,5 @@
 package io.github.zyraxi21.nfc.cast
 
-import androidx.compose.ui.res.stringResource
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -15,6 +14,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.microsoft.fluentui.theme.token.controlTokens.ButtonStyle
@@ -46,13 +50,16 @@ internal fun CastScreen(
     onWirelessSettings: () -> Unit,
     onConfirmCode: () -> Unit = {},
 ) {
+    val isPreview = LocalInspectionMode.current
     var full by rememberSaveable { mutableStateOf(false) }
     val currentSurfaceCallback by rememberUpdatedState(onSurface)
     val receiving = state.stage == CastStage.RECEIVING
-    LaunchedEffect(receiving) { if (!receiving) full = false }
-    LaunchedEffect(full) { onFullscreen(full) }
-    DisposableEffect(Unit) { onDispose { onFullscreen(false); currentSurfaceCallback(null) } }
-    BackHandler(full) { full = false }
+    if (!isPreview) {
+        LaunchedEffect(receiving) { if (!receiving) full = false }
+        LaunchedEffect(full) { onFullscreen(full) }
+        DisposableEffect(Unit) { onDispose { onFullscreen(false); currentSurfaceCallback(null) } }
+        BackHandler(full) { full = false }
+    }
     // 全屏画面使用完整窗口；只有操作控件避开挖孔，不能给视频整体加安全区边距。
     Column(Modifier.fillMaxSize().background(if (full) Color.Black else AppTheme.canvas)
         .then(if (full) Modifier else Modifier.safeDrawingPadding()).testTag("cast-screen")) {
@@ -73,7 +80,11 @@ internal fun CastScreen(
                     val displayWidth = minOf(maxWidth, maxHeight * ratio)
                     val displayHeight = displayWidth / ratio
                     val surfaceCallback by rememberUpdatedState(onSurface)
-                    AndroidView(
+                    if (isPreview) {
+                        Box(Modifier.size(displayWidth, displayHeight).testTag("cast-video"), contentAlignment = Alignment.Center) {
+                            FluentText(stringResource(R.string.cast_preview_video), FluentTextStyle.Body1, color = Color.White)
+                        }
+                    } else AndroidView(
                         factory = { context -> SurfaceView(context).apply {
                             holder.addCallback(object : SurfaceHolder.Callback {
                                 override fun surfaceCreated(holder: SurfaceHolder) { surfaceCallback(holder.surface) }
@@ -115,8 +126,10 @@ internal fun CastScreen(
                 }
                 CastStage.ADVERTISING -> {
                     StatusCard(stringResource(R.string.cast_advertising_title), stringResource(R.string.cast_advertising_description))
-                    var seconds by remember { mutableLongStateOf(0) }
-                    LaunchedEffect(state.expiresAt) { while (true) {
+                    var seconds by remember(state.expiresAt) {
+                        mutableLongStateOf(((state.expiresAt - System.currentTimeMillis()).coerceAtLeast(0) + 999) / 1000)
+                    }
+                    if (!isPreview) LaunchedEffect(state.expiresAt) { while (true) {
                         seconds = ((state.expiresAt - System.currentTimeMillis()).coerceAtLeast(0) + 999) / 1000
                         delay(1000)
                     } }
@@ -182,4 +195,51 @@ private fun StatusCard(title: String, text: String) {
             FluentText(text, FluentTextStyle.Body2, color = AppTheme.textSecondary)
         }
     }
+}
+
+/** 预览仅提供界面状态，不连接设备，也不创建实际的视频 Surface。 */
+internal data class CastPreviewState(val state: CastUiState, val scanning: Boolean = false)
+
+internal class CastPreviewParameterProvider : PreviewParameterProvider<CastPreviewState> {
+    override val values: Sequence<CastPreviewState>
+        get() = sequence {
+            for (stage in CastStage.entries) {
+                yield(CastPreviewState(CastUiState(stage = stage, localSender = true,
+                    connectionCode = if (stage == CastStage.VERIFYING) "12345" else "",
+                    expiresAt = System.currentTimeMillis() + 300_000,
+                    width = 1220, height = 2656, hasFrame = true,
+                    videoBitrate = 18_000_000, videoFrameRate = 30)))
+            }
+            yield(CastPreviewState(CastUiState(), scanning = true))
+            yield(CastPreviewState(CastUiState(CastStage.OFFER_IN, localSender = false)))
+            yield(CastPreviewState(CastUiState(CastStage.PREPARING, localSender = false)))
+            yield(CastPreviewState(CastUiState(CastStage.VERIFYING, connectionCode = "12345", codeConfirmed = true)))
+        }
+}
+
+@Preview(name = "屏幕共享 浅色", showBackground = true, widthDp = 393, heightDp = 852)
+@Preview(name = "屏幕共享 深色", showBackground = true, widthDp = 393, heightDp = 852,
+    uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun CastScreenPreview(@PreviewParameter(CastPreviewParameterProvider::class) sample: CastPreviewState) {
+    MyApplicationTheme(dynamicColor = false) { PreviewCastContent(sample) }
+}
+
+@Preview(name = "屏幕共享 横屏接收", showBackground = true, widthDp = 852, heightDp = 393)
+@Preview(name = "屏幕共享 横屏接收深色", showBackground = true, widthDp = 852, heightDp = 393,
+    uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun CastScreenLandscapePreview() {
+    MyApplicationTheme(dynamicColor = false) {
+        PreviewCastContent(CastPreviewState(CastUiState(CastStage.RECEIVING, width = 2656, height = 1220, hasFrame = true)))
+    }
+}
+
+@Composable
+private fun PreviewCastContent(sample: CastPreviewState) {
+    CastScreen(sample.state, sample.scanning, null,
+        onHost = {}, onScan = {}, onConnectInvite = null, onCancelScan = {},
+        onRequestDirection = {}, onAccept = {}, onReject = {}, onCapture = {},
+        onStopVideo = {}, onEnd = {}, onBack = {}, onHome = {}, onSurface = {},
+        onFullscreen = {}, onNfcSettings = {}, onWirelessSettings = {})
 }
