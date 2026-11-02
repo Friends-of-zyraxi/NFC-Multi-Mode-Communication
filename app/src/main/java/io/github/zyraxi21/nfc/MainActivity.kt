@@ -218,10 +218,10 @@ class MainActivity : ComponentActivity() {
                     else systemRecordActionHandler(action)
                 }
 
-                // ---- App 级 NFC 自检：启动时检查一次，正常则静默隐藏按钮 ----
+                // 有 NFC 的设备检查开关；无 NFC 的设备使用端对端入口，不弹全局退出提示。
                 var nfcChecked by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) {
-                    if (!nfcChecked) {
+                    if (!nfcChecked && nfcAdapter != null) {
                         nfcChecked = true
                         checkNfcAvailability { messageRes, actionRes, action ->
                             if (messageRes != R.string.msg_nfc_available) {
