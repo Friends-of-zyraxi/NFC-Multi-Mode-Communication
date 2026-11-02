@@ -580,7 +580,13 @@ class MainActivity : ComponentActivity() {
             payload.asBytes()?.let { bytes ->
                 val result = parseNearbyPayload(this@MainActivity, bytes)
                 runOnUiThread {
-                    if (currentEndpointId == endpointId) receivedNearbyResult = result
+                    if (currentEndpointId == endpointId) {
+                        receivedNearbyResult = result
+                        val message = if (result.records.any { it.warningResId == R.string.p2p_invalid_payload })
+                            getString(R.string.p2p_invalid_payload)
+                        else getString(R.string.p2p_message_received, result.records.size)
+                        showConnectionSnackbar(message)
+                    }
                 }
             }
         }
