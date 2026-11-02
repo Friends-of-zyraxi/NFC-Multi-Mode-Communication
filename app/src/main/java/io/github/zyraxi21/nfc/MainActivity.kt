@@ -28,6 +28,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
+import androidx.lifecycle.lifecycleScope
 import com.microsoft.fluentui.tokenized.notification.NotificationResult
 import com.microsoft.fluentui.tokenized.notification.SnackbarState
 import com.microsoft.fluentui.theme.token.controlTokens.SnackbarStyle
@@ -51,6 +52,7 @@ import io.github.zyraxi21.nfc.util.RecordAction
 import io.github.zyraxi21.nfc.cast.CastActivity
 import io.github.zyraxi21.nfc.cast.CastSessionService
 import io.github.zyraxi21.nfc.cast.RecordNearbyLink
+import io.github.zyraxi21.nfc.cast.ConnectionMessages
 import io.github.zyraxi21.nfc.util.InvalidWriteRecordException
 import io.github.zyraxi21.nfc.util.MAX_EMULATED_NDEF_BYTES
 import io.github.zyraxi21.nfc.util.NfcWriteRecord
@@ -87,6 +89,11 @@ class MainActivity : ComponentActivity() {
     var writeStatusMessage by mutableStateOf("")
 
     private var snackbarHostState: SnackbarState? = null
+    private val connectionMessages by lazy {
+        ConnectionMessages(lifecycleScope) { message ->
+            snackbarHostState?.showSnackbar(message, style = SnackbarStyle.Accent)
+        }
+    }
 
     // P2P通信相关状态变量
     private var p2pConnectionState by mutableStateOf(ConnectionState.DISCONNECTED)
@@ -527,7 +534,7 @@ class MainActivity : ComponentActivity() {
             Log.d("Nearby", "连接被发起: $endpointId")
             p2pConnectionState = ConnectionState.CONNECTING
             connectionsClient.acceptConnection(endpointId, RecordNearbyLink.payloads)
-            showToast(getString(R.string.toast_accepting_connection))
+            showConnectionSnackbar(getString(R.string.toast_accepting_connection))
         }
 
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
@@ -538,19 +545,19 @@ class MainActivity : ComponentActivity() {
                     currentEndpointId = endpointId
                     receivedNearbyResult = null
                     screenSharingRequested = false
-                    showToast(getString(R.string.toast_connection_success))
+                    showConnectionSnackbar(getString(R.string.toast_connection_success))
                 }
                 ConnectionsStatusCodes.STATUS_CONNECTION_REJECTED -> {
                     Log.d("Nearby", "连接被拒绝: $endpointId")
                     p2pConnectionState = ConnectionState.DISCONNECTED
                     currentEndpointId = null
-                    showToast(getString(R.string.toast_connection_rejected))
+                    showConnectionSnackbar(getString(R.string.toast_connection_rejected))
                 }
                 ConnectionsStatusCodes.STATUS_ERROR -> {
                     Log.d("Nearby", "连接错误: $endpointId")
                     p2pConnectionState = ConnectionState.DISCONNECTED
                     currentEndpointId = null
-                    showToast(getString(R.string.toast_connection_failed))
+                    showConnectionSnackbar(getString(R.string.toast_connection_failed))
                 }
                 else -> {
                     Log.d("Nearby", "连接结果未知: ${result.status.statusCode}")
@@ -564,7 +571,7 @@ class MainActivity : ComponentActivity() {
             currentEndpointId = null
             outgoingNearbyPayloads.clear()
             screenSharingRequested = false
-            showSnackbar(getString(R.string.toast_connection_disconnected))
+            showConnectionSnackbar(getString(R.string.toast_connection_disconnected))
         }
     }
 
@@ -582,10 +589,10 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 when (update.status) {
                     PayloadTransferUpdate.Status.SUCCESS -> if (outgoingNearbyPayloads.remove(update.payloadId)) {
-                        showToast(getString(R.string.toast_message_sent))
+                        showConnectionSnackbar(getString(R.string.toast_message_sent))
                     }
                     PayloadTransferUpdate.Status.FAILURE, PayloadTransferUpdate.Status.CANCELED ->
-                        if (outgoingNearbyPayloads.remove(update.payloadId)) showToast(getString(R.string.p2p_transfer_failed))
+                        if (outgoingNearbyPayloads.remove(update.payloadId)) showConnectionSnackbar(getString(R.string.p2p_transfer_failed))
                 }
             }
         }
@@ -682,10 +689,10 @@ class MainActivity : ComponentActivity() {
             advertisingOptions
         ).addOnSuccessListener {
             p2pConnectionState = ConnectionState.ADVERTISING
-            showToast(getString(R.string.toast_advertising_started))
+            showConnectionSnackbar(getString(R.string.toast_advertising_started))
         }.addOnFailureListener { e ->
             p2pConnectionState = ConnectionState.DISCONNECTED
-            showToast(getString(R.string.format_advertising_failed, e.message))
+            showConnectionSnackbar(getString(R.string.format_advertising_failed, e.message))
         }
     }
 
@@ -693,7 +700,7 @@ class MainActivity : ComponentActivity() {
     private fun stopAdvertising() {
         connectionsClient.stopAdvertising()
         p2pConnectionState = ConnectionState.DISCONNECTED
-        showToast(getString(R.string.toast_advertising_stopped))
+        showConnectionSnackbar(getString(R.string.toast_advertising_stopped))
     }
 
     // 停止发现模式
@@ -732,10 +739,10 @@ class MainActivity : ComponentActivity() {
             discoveryOptions
         ).addOnSuccessListener {
             p2pConnectionState = ConnectionState.DISCOVERING
-            showToast(getString(R.string.toast_discovery_started))
+            showConnectionSnackbar(getString(R.string.toast_discovery_started))
         }.addOnFailureListener { e ->
             p2pConnectionState = ConnectionState.DISCONNECTED
-            showToast(getString(R.string.format_discovery_failed, e.message))
+            showConnectionSnackbar(getString(R.string.format_discovery_failed, e.message))
         }
     }
 
@@ -758,7 +765,7 @@ class MainActivity : ComponentActivity() {
             }
             .addOnFailureListener { e ->
                 outgoingNearbyPayloads.remove(payload.id)
-                showToast(getString(R.string.format_message_send_failed, e.message))
+                showConnectionSnackbar(getString(R.string.format_message_send_failed, e.message))
                 Log.e("Nearby", "消息发送失败", e)
             }
     }
@@ -780,10 +787,10 @@ class MainActivity : ComponentActivity() {
             endpointId,
             connectionLifecycleCallback
         ).addOnSuccessListener {
-            showToast(getString(R.string.toast_connection_requested))
+            showConnectionSnackbar(getString(R.string.toast_connection_requested))
         }.addOnFailureListener { e ->
             p2pConnectionState = ConnectionState.DISCONNECTED
-            showToast(getString(R.string.format_connection_request_failed, e.message))
+            showConnectionSnackbar(getString(R.string.format_connection_request_failed, e.message))
         }
     }
 
@@ -793,6 +800,7 @@ class MainActivity : ComponentActivity() {
     // =======================================================================
 
     private fun openScreenSharing(inviteBytes: ByteArray? = null) {
+        connectionMessages.pause()
         if (!CastSessionService.ownsNearby) {
             connectionsClient.stopAdvertising()
             connectionsClient.stopDiscovery()
@@ -809,12 +817,14 @@ class MainActivity : ComponentActivity() {
             return
         }
         screenSharingRequested = false
+        connectionMessages.pause()
         RecordNearbyLink.reserveForCast()
         startActivity(Intent(this, CastActivity::class.java).putExtra(CastActivity.EXTRA_EXISTING_CONNECTION, true))
     }
 
     override fun onResume() {
         super.onResume()
+        connectionMessages.resume()
         val recordPeer = RecordNearbyLink.peer
         if (recordPeer != null) {
             currentEndpointId = recordPeer.endpoint
@@ -859,6 +869,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        connectionMessages.pause()
         super.onPause()
         nfcAdapter?.disableReaderMode(this)
         nfcAdapter?.let {
@@ -1031,9 +1042,14 @@ class MainActivity : ComponentActivity() {
 
     private fun showSnackbar(message: String) {
         val host = snackbarHostState ?: return
-        kotlinx.coroutines.MainScope().launch {
+        lifecycleScope.launch {
             host.showSnackbar(message, style = SnackbarStyle.Accent)
         }
+    }
+
+    private fun showConnectionSnackbar(message: String) {
+        if (CastSessionService.ownsNearby || RecordNearbyLink.handoffPending) return
+        connectionMessages.show(message)
     }
 
     // 保留作为内部便捷方法（所有调用点已替换为 showSnackbar）
