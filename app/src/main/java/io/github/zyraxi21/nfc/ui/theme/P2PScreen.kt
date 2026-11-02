@@ -7,6 +7,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -53,7 +54,8 @@ fun P2PScreen(
         }
     }
     val controls: @Composable () -> Unit = {
-        Column(verticalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(FluentSpacing.m),
+            horizontalAlignment = Alignment.CenterHorizontally) {
             if (!hasPermissions) {
                 FluentText(stringResource(R.string.p2p_text_permission_required), FluentTextStyle.Body1)
                 FluentButton(text = stringResource(R.string.button_grant_permission), onClick = onRequestPermissions)
@@ -89,7 +91,7 @@ fun P2PScreen(
                         style = ButtonStyle.OutlinedButton, modifier = Modifier.fillMaxWidth())
                 }
                 else -> {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(modifier = Modifier.testTag("p2p-connecting-progress"))
                     FluentText(stringResource(when (connectionState) {
                         ConnectionState.ADVERTISING -> R.string.p2p_text_waiting_reader
                         ConnectionState.DISCOVERING -> R.string.p2p_text_approach_device

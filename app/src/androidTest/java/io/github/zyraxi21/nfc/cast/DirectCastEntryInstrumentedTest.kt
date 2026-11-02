@@ -48,5 +48,20 @@ class DirectCastEntryInstrumentedTest {
         compose.runOnIdle { assertEquals(1, ended); assertEquals(0, captures) }
     }
 
-
+    @Test fun discoveryAndAdvertisingProgressAndStopButtonsAreCentered() {
+        val state = mutableStateOf(ConnectionState.DISCOVERING)
+        compose.setContent { MyApplicationTheme {
+            P2PScreen(state.value, null, true, true, null, {}, {}, {}, {}, {}, {}, {}, {}, true, {})
+        } }
+        fun check(label: String) {
+            val root = compose.onNodeWithTag("p2p-status").fetchSemanticsNode().boundsInRoot
+            val spinner = compose.onNodeWithTag("p2p-connecting-progress").fetchSemanticsNode().boundsInRoot
+            val button = compose.onNodeWithText(label).fetchSemanticsNode().boundsInRoot
+            assertEquals(root.center.x, spinner.center.x, 1f)
+            assertEquals(root.center.x, button.center.x, 1f)
+        }
+        check("停止发现")
+        compose.runOnIdle { state.value = ConnectionState.ADVERTISING }
+        check("停止广播")
+    }
 }

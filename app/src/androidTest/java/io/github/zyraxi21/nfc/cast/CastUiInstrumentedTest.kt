@@ -38,6 +38,22 @@ class CastUiInstrumentedTest {
         }
     }
 
+    @Test fun titleStaysCenteredWithOrWithoutDisconnectAndCancelRequestIsCentered() {
+        val state = mutableStateOf(CastUiState())
+        compose.setContent { MyApplicationTheme { screen(state.value) } }
+        fun checkTitle() {
+            val bar = compose.onNodeWithTag("cast-top-bar").fetchSemanticsNode().boundsInRoot
+            val title = compose.onNodeWithTag("cast-title").fetchSemanticsNode().boundsInRoot
+            assertEquals(bar.center.x, title.center.x, 1f)
+        }
+        checkTitle()
+        compose.runOnIdle { state.value = CastUiState(CastStage.OFFER_OUT, localSender = false) }
+        checkTitle()
+        val root = compose.onNodeWithTag("cast-screen").fetchSemanticsNode().boundsInRoot
+        val cancel = compose.onNodeWithText("取消请求").fetchSemanticsNode().boundsInRoot
+        assertEquals(root.center.x, cancel.center.x, 1f)
+    }
+
     @Test fun choosingDirectionAndAcceptingDoNotBypassTheExplicitCaptureButton() {
         val state = mutableStateOf(CastUiState(CastStage.READY))
         val requests = mutableListOf<Boolean>()
@@ -63,6 +79,13 @@ class CastUiInstrumentedTest {
         val landscape = compose.onNodeWithTag("cast-video").fetchSemanticsNode().boundsInRoot
         assertEquals(1280f / 720, landscape.width / landscape.height, 0.02f)
         compose.onNodeWithText("全屏查看").performClick()
+        val root = compose.onNodeWithTag("cast-screen").fetchSemanticsNode().boundsInRoot
+        val viewport = compose.onNodeWithTag("cast-viewport").fetchSemanticsNode().boundsInRoot
+        val video = compose.onNodeWithTag("cast-video").fetchSemanticsNode().boundsInRoot
+        assertEquals(root, viewport)
+        assertTrue(kotlin.math.abs(video.width - viewport.width) < 2 || kotlin.math.abs(video.height - viewport.height) < 2)
+        val pixel = compose.onNodeWithTag("cast-viewport").captureToImage().asAndroidBitmap().getPixel(0, 0)
+        assertEquals(android.graphics.Color.BLACK, pixel)
         compose.onNodeWithText("结束共享").assertDoesNotExist()
         compose.onNodeWithText("退出全屏").performClick()
         compose.onNodeWithText("结束共享").performClick()

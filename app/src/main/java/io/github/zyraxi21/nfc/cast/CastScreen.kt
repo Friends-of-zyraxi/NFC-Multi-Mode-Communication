@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -50,14 +51,19 @@ internal fun CastScreen(
     LaunchedEffect(full) { onFullscreen(full) }
     DisposableEffect(Unit) { onDispose { onFullscreen(false); currentSurfaceCallback(null) } }
     BackHandler(full) { full = false }
-    Column(Modifier.fillMaxSize().background(AppTheme.canvas).safeDrawingPadding().testTag("cast-screen")) {
-        if (!full) Row(Modifier.fillMaxWidth().padding(horizontal = FluentSpacing.mPlus), verticalAlignment = Alignment.CenterVertically) {
-            FluentButton(onClick = onBack, text = "返回", style = ButtonStyle.TextButton)
-            FluentText("屏幕共享", FluentTextStyle.Title3, modifier = Modifier.weight(1f))
-            if (state.stage != CastStage.IDLE) FluentButton(onClick = onEnd, text = "断开", style = ButtonStyle.TextButton)
+    // 全屏画面使用完整窗口；只有操作控件避开挖孔，不能给视频整体加安全区边距。
+    Column(Modifier.fillMaxSize().background(if (full) Color.Black else AppTheme.canvas)
+        .then(if (full) Modifier else Modifier.safeDrawingPadding()).testTag("cast-screen")) {
+        if (!full) Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = FluentSpacing.mPlus).testTag("cast-top-bar")) {
+            FluentText("屏幕共享", FluentTextStyle.Title3,
+                modifier = Modifier.align(Alignment.Center).padding(horizontal = 72.dp).testTag("cast-title"))
+            FluentButton(onClick = onBack, text = "返回", style = ButtonStyle.TextButton, modifier = Modifier.align(Alignment.CenterStart))
+            if (state.stage != CastStage.IDLE) FluentButton(onClick = onEnd, text = "断开", style = ButtonStyle.TextButton,
+                modifier = Modifier.align(Alignment.CenterEnd))
         }
         if (receiving) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            // 比例不同时保留完整画面，剩余区域始终为纯黑色。
+            Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black).testTag("cast-viewport"), contentAlignment = Alignment.Center) {
                 val width = state.width
                 val height = state.height
                 BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -76,9 +82,12 @@ internal fun CastScreen(
                         modifier = Modifier.size(displayWidth, displayHeight).testTag("cast-video"),
                     )
                 }
-                if (!state.hasFrame) FluentText("等待对方画面…", FluentTextStyle.Body1)
-                if (full) FluentButton(onClick = { full = false }, text = "退出全屏", style = ButtonStyle.OutlinedButton,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(FluentSpacing.m))
+                if (!state.hasFrame) FluentText("等待对方画面…", FluentTextStyle.Body1, color = Color.White)
+                if (full) Box(Modifier.align(Alignment.TopEnd)
+                    .windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.systemBars))
+                    .padding(FluentSpacing.m)) {
+                    FluentButton(onClick = { full = false }, text = "退出全屏")
+                }
             }
             if (!full) Row(Modifier.fillMaxWidth().padding(FluentSpacing.mPlus), horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
                 FluentButton(onClick = { full = true }, text = "全屏查看", modifier = Modifier.weight(1f))
@@ -87,6 +96,7 @@ internal fun CastScreen(
         } else Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(FluentSpacing.mPlus),
             verticalArrangement = Arrangement.spacedBy(FluentSpacing.mPlus),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             val message = localMessage ?: state.message
             message?.let { FluentText(it, FluentTextStyle.Body2, color = AppTheme.danger) }
@@ -151,7 +161,7 @@ internal fun CastScreen(
                 CastStage.RECEIVING -> Unit
             }
             if (state.stage == CastStage.IDLE) {
-                Row(horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m, Alignment.CenterHorizontally)) {
                     FluentButton(onClick = onNfcSettings, text = "NFC 设置", style = ButtonStyle.TextButton)
                     FluentButton(onClick = onWirelessSettings, text = "无线设置", style = ButtonStyle.TextButton)
                 }

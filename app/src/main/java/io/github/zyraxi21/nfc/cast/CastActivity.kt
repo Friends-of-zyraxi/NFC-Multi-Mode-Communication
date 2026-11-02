@@ -66,6 +66,9 @@ class CastActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
         useExistingConnection = intent.getBooleanExtra(EXTRA_EXISTING_CONNECTION, false)
         if (useExistingConnection) RecordNearbyLink.reserveForCast()
         // 端对端入口保留现有连接，NFC 入口单独建立连接。
@@ -192,7 +195,7 @@ class CastActivity : ComponentActivity() {
         }.onFailure { localMessage = "NFC 暂不可用，请检查开关后重试" }
     }
 
-    private fun setFullscreen(full: Boolean) {
+    internal fun setFullscreen(full: Boolean) {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             if (full) hide(WindowInsetsCompat.Type.systemBars()) else show(WindowInsetsCompat.Type.systemBars())
