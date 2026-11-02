@@ -89,7 +89,7 @@ internal sealed interface VideoPacket {
 }
 
 internal object VideoWire {
-    const val MAX_FRAME = 1024 * 1024
+    const val MAX_FRAME = 8 * 1024 * 1024
     private const val MAGIC = 0x4E465343 // NFSC
     fun header(output: OutputStream, id: String) = DataOutputStream(output).apply {
         require(validId(id)); writeInt(MAGIC); writeInt(1); write(id.toByteArray(Charsets.US_ASCII)); flush()
@@ -127,7 +127,7 @@ internal object VideoWire {
         return ByteArray(size).also { readFully(it) }
     }
     private fun validate(config: VideoPacket.Config) {
-        require(config.width in 16..2048 && config.height in 16..2048)
+        require(config.width in 1..8192 && config.height in 1..8192 && config.width.toLong() * config.height <= 33_554_432)
         require(config.sps.size in 1..65_536 && config.pps.size in 1..65_536)
     }
 }

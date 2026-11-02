@@ -64,9 +64,11 @@ class ProjectionLoopbackInstrumentedTest {
         var encoder: ScreenEncoder? = null
         val acknowledgedFrames = java.util.concurrent.atomic.AtomicInteger(0)
         val continuousFrames = CountDownLatch(15)
+        val actualSizes = Collections.synchronizedList(mutableListOf<Pair<Int, Int>>())
+        val actualBitrates = Collections.synchronizedList(mutableListOf<Int>())
         val decoder = ScreenDecoder(input, id, { _, _ -> }, {}, { error.set(it) }, { encoder?.requestKeyFrame() },
             onRendered = { pts ->
-                // 延迟反馈模拟慢链路，验证两帧窗口仍持续推进，不会等下一包才能解码。
+                // 延迟反馈模拟慢链路，验证有界窗口仍持续推进，不会等下一包才能解码。
                 Handler(thread.looper).postDelayed({
                     encoder?.acknowledge(pts)
                     acknowledgedFrames.incrementAndGet(); continuousFrames.countDown()
@@ -92,17 +94,23 @@ class ProjectionLoopbackInstrumentedTest {
             val projection = requireNotNull(context.getSystemService(MediaProjectionManager::class.java).getMediaProjection(capture.resultCode, requireNotNull(capture.data)))
             encoder = ScreenEncoder(projection, output, id, context.resources.displayMetrics.densityDpi,
                 onSize = { width, height ->
+                    actualSizes += width to height
                     val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
                     readers += reader
                     reader.setOnImageAvailableListener({ available -> available.acquireLatestImage()?.use {
                         (if (width > height) landscape else portrait).countDown()
                     } }, Handler(thread.looper))
                     decoder.attach(reader.surface)
-                }, onError = { error.set(it) })
+                }, onError = { error.set(it) }, onQuality = { bitrate, _ -> actualBitrates += bitrate })
             decoder.start()
             val metrics = compose.activity.windowManager.maximumWindowMetrics.bounds
             encoder.start(metrics.width(), metrics.height())
-            assertTrue("录屏竖屏未显示：${error.get()}", portrait.await(12, TimeUnit.SECONDS))
+            val visible = portrait.await(12, TimeUnit.SECONDS)
+            assertTrue("录屏竖屏未显示：${error.get()}，尺寸=$actualSizes，码率=$actualBitrates", visible)
+            val original = actualSizes.first()
+            assertTrue("原始宽度被缩小", original.first >= metrics.width())
+            assertTrue("原始高度被缩小", original.second >= metrics.height())
+            assertTrue("未启用高码率", actualBitrates.first() >= 8_000_000)
             assertTrue("慢速反馈下视频未持续推进：${error.get()}", continuousFrames.await(15, TimeUnit.SECONDS))
             shell("wm user-rotation lock 1")
             assertTrue("同一录屏会话旋转后未显示：${error.get()}", landscape.await(12, TimeUnit.SECONDS))

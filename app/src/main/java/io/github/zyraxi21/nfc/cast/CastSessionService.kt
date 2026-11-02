@@ -36,6 +36,8 @@ data class CastUiState(
     val expiresAt: Long = 0,
     val connectionCode: String = "",
     val codeConfirmed: Boolean = false,
+    val videoBitrate: Int = 0,
+    val videoFrameRate: Int = 0,
 )
 
 /** 独立占用 Nearby 的投屏会话。所有连接及角色状态在主线程串行更新，媒体在专用线程运行。 */
@@ -302,6 +304,7 @@ class CastSessionService : Service() {
             encoder = ScreenEncoder(projection, output, id, resources.displayMetrics.densityDpi,
                 onSize = { w, h -> main.post { if (proposal == id) mutableState.value = state.value.copy(width = w, height = h) } },
                 onError = { message -> main.post { if (proposal == id) stopVideo(message) } },
+                onQuality = { bitrate, fps -> main.post { if (proposal == id) mutableState.value = state.value.copy(videoBitrate = bitrate, videoFrameRate = fps) } },
             )
             mutableState.value = state.value.copy(stage = CastStage.SENDING)
             roleTimeout?.cancel()

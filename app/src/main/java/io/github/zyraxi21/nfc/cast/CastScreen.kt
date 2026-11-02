@@ -155,6 +155,9 @@ internal fun CastScreen(
                 CastStage.SENDING -> {
                     StatusCard("正在共享本机屏幕", "可返回桌面打开其他应用，对方会实时看到共享区域。系统锁屏或停止录屏后，本次共享会结束。")
                     if (state.width > 0) FluentText("画面尺寸 ${state.width} × ${state.height}", FluentTextStyle.Caption1, color = AppTheme.textSecondary)
+                    if (state.videoBitrate > 0) FluentText(
+                        "编码目标 ${"%.1f".format(state.videoBitrate / 1_000_000.0)} Mbit/s，${state.videoFrameRate} fps",
+                        FluentTextStyle.Caption1, color = AppTheme.textSecondary)
                     FluentButton(onClick = onHome, text = "返回桌面继续共享", modifier = Modifier.fillMaxWidth())
                     FluentButton(onClick = onStopVideo, text = "结束共享", style = ButtonStyle.OutlinedButton, modifier = Modifier.fillMaxWidth())
                 }

@@ -4,6 +4,7 @@ import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.media.projection.MediaProjection
 import android.os.Bundle
@@ -17,7 +18,6 @@ import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.min
 
 /** 一次授权只创建一次 VirtualDisplay；旋转时更换编码 Surface，并在流内重新发送参数集。 */
 internal class ScreenEncoder(
@@ -27,6 +27,7 @@ internal class ScreenEncoder(
     private val density: Int,
     private val onSize: (Int, Int) -> Unit,
     private val onError: (String) -> Unit,
+    private val onQuality: (Int, Int) -> Unit = { _, _ -> },
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val thread = HandlerThread("screen-encoder").apply { start() }
@@ -42,12 +43,13 @@ internal class ScreenEncoder(
     private var config: VideoPacket.Config? = null
     private var waitingForKey = true
     private var appliedBitrate = flow.bitrate
+    private var frameRate = VideoQuality.TARGET_FPS
 
     private val callback = object : MediaProjection.Callback() {
         override fun onStop() { if (!closed.get()) onError("系统已停止屏幕共享") }
         override fun onCapturedContentResize(width: Int, height: Int) {
             if (!closed.get()) runCatching { configure(width, height) }
-                .onFailure { onError("无法调整共享画面尺寸") }
+                .onFailure { onError(if (it is NativeResolutionException) it.message!! else "无法调整共享画面尺寸") }
         }
     }
 
@@ -70,36 +72,55 @@ internal class ScreenEncoder(
                 display = projection.createVirtualDisplay("NFC screen sharing", width, height, density,
                     DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, surface, null, handler)
                 watchdog()
-            } catch (_: Exception) { if (!closed.get()) onError("无法启动录屏，请重新授权或检查设备编码能力") }
+            } catch (error: Exception) { if (!closed.get()) onError(if (error is NativeResolutionException) error.message!! else "无法启动录屏，请重新授权或检查设备编码能力") }
         }
     }
 
     private fun configure(sourceWidth: Int, sourceHeight: Int) {
         require(sourceWidth > 0 && sourceHeight > 0)
-        val scale = min(1.0, min(960.0 / maxOf(sourceWidth, sourceHeight), 540.0 / minOf(sourceWidth, sourceHeight)))
-        // 16 像素对齐兼容硬件 AVC 编码器；轻微尺寸取整由虚拟显示负责缩放。
-        val w = maxOf(16, (sourceWidth * scale).toInt() / 16 * 16)
-        val h = maxOf(16, (sourceHeight * scale).toInt() / 16 * 16)
+        val selected = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+            .filter { it.isEncoder && it.supportedTypes.any { type -> type.equals(MediaFormat.MIMETYPE_VIDEO_AVC, true) } }
+            .sortedByDescending { it.isHardwareAccelerated }
+            .firstNotNullOfOrNull { info -> runCatching {
+                val codecCaps = info.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
+                require(MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface in codecCaps.colorFormats)
+                val caps = requireNotNull(codecCaps.videoCapabilities)
+                require(caps.bitrateRange.lower <= VideoQuality.MAX_BITRATE && caps.bitrateRange.upper > 0)
+                val w = VideoQuality.aligned(sourceWidth, caps.widthAlignment)
+                val h = VideoQuality.aligned(sourceHeight, caps.heightAlignment)
+                require(w <= 8192 && h <= 8192 && w.toLong() * h <= 33_554_432 && caps.isSizeSupported(w, h))
+                val fps = caps.getSupportedFrameRatesFor(w, h).upper.toInt().coerceIn(1, VideoQuality.TARGET_FPS)
+                require(caps.areSizeAndRateSupported(w, h, fps.toDouble()))
+                NativeEncoder(info.name, w, h, fps, caps.bitrateRange.lower, caps.bitrateRange.upper)
+            }.getOrNull() } ?: throw NativeResolutionException("设备编码器不支持原始分辨率 ${sourceWidth}×${sourceHeight}")
+        val w = selected.width
+        val h = selected.height
+        android.util.Log.d("NativeCast", "Selected ${selected.name}: ${w}x${h}, ${selected.fps} fps")
         if (w == width && h == height && codec != null) return
         display?.surface = null
         val oldCodec = codec; codec = null
         runCatching { oldCodec?.stop() }; runCatching { oldCodec?.release() }
         surface?.release(); surface = null
         width = w; height = h; config = null; waitingForKey = true; packets.clear()
+        frameRate = selected.fps
+        val maximum = selected.maxBitrate.coerceAtMost(VideoQuality.MAX_BITRATE)
+        val minimum = VideoQuality.MIN_BITRATE.coerceAtMost(maximum).coerceAtLeast(selected.minBitrate)
+        flow.configure(minimum, maximum, VideoQuality.targetBitrate(w, h, frameRate))
         flow.resetFrames(); appliedBitrate = flow.bitrate
+        onQuality(appliedBitrate, frameRate)
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, appliedBitrate)
-            setInteger(MediaFormat.KEY_FRAME_RATE, 15)
+            setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-            setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, 15f)
+            setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, frameRate.toFloat())
             setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
             // 参考 scrcpy：静止画面仅补发少量帧，不按目标帧率持续重复整屏。
             setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100_000L)
             setInteger(MediaFormat.KEY_PRIORITY, 0)
             setInteger(MediaFormat.KEY_LATENCY, 1)
         }
-        val next = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        val next = MediaCodec.createByCodecName(selected.name)
         codec = next
         // WebRTC 使用 CBR 约束突发流量；仅在当前编码器明确支持时启用。
         if (next.codecInfo.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC).encoderCapabilities
@@ -176,6 +197,7 @@ internal class ScreenEncoder(
         if (appliedBitrate != flow.bitrate) runCatching {
             codec?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, flow.bitrate) })
             appliedBitrate = flow.bitrate
+            onQuality(appliedBitrate, frameRate)
         }
     }
 
@@ -197,4 +219,7 @@ internal class ScreenEncoder(
             thread.quitSafely()
         }
     }
+
+    private data class NativeEncoder(val name: String, val width: Int, val height: Int, val fps: Int, val minBitrate: Int, val maxBitrate: Int)
+    private class NativeResolutionException(message: String) : Exception(message)
 }
