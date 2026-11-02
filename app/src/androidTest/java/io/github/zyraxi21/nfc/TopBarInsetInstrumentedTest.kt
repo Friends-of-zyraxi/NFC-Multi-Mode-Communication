@@ -5,6 +5,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.performScrollTo
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,7 +21,14 @@ class TopBarInsetInstrumentedTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun titleClickAreaIncludesTheStatusBarInsetAndStillOpensAbout() {
+    fun aboutEntryRemainsAccessibleAndCompactTitleIncludesTheStatusBar() {
+        if (compose.onAllNodesWithTag("app-navigation-rail").fetchSemanticsNodes().isNotEmpty()) {
+            val rail = compose.onNodeWithTag("app-navigation-rail").fetchSemanticsNode().boundsInWindow
+            assertEquals("侧栏背景应从窗口边缘开始", 0f, rail.left, 1f)
+            compose.onNodeWithTag("rail-about").performScrollTo().performClick()
+            compose.onNodeWithTag("about-sheet").assertExists()
+            return
+        }
         val title = compose.onNode(hasText(compose.activity.getString(R.string.app_title)) and hasClickAction())
         val bounds = title.fetchSemanticsNode().boundsInWindow
         val inset = ViewCompat.getRootWindowInsets(compose.activity.window.decorView)

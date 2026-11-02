@@ -1,8 +1,12 @@
 package io.github.zyraxi21.nfc.ui.theme
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -17,13 +21,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
@@ -36,6 +44,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.microsoft.fluentui.theme.token.Icon
+import com.microsoft.fluentui.theme.token.controlTokens.ButtonStyle
 import com.microsoft.fluentui.tokenized.notification.SnackbarState
 import io.github.zyraxi21.nfc.R
 import kotlinx.coroutines.launch
@@ -51,7 +60,7 @@ enum class NavigationItem(
 }
 
 /**
- * 应用外壳：顶栏 + 分页内容 + 底部导航。
+ * 应用外壳：窄屏使用顶栏和横向分页，宽屏使用侧栏和页面淡入淡出。
  *
  * 顶栏底色走 [AppTheme.brandSurface]：浅色模式用品牌色（对齐 Word 安卓版带主题色的标题栏），
  * 深色模式退回中性表面 `NeutralBackground3`。深色不能继续用品牌色的原因是硬性的——
@@ -61,7 +70,8 @@ enum class NavigationItem(
  * 顶栏与页面文字都通过 `FluentText` 显式指定颜色，不依赖 `LocalContentColor`。
  *
  * edge-to-edge 要点：
- * - 顶栏自己用 `statusBarsPadding()`，让品牌/表面色块贯通状态栏，避免状态栏区域露出画布底色。
+ * - 窄屏顶栏自己用 `statusBarsPadding()`，让品牌/表面色块贯通状态栏。
+ * - 宽屏侧栏背景绘制到窗口边缘，仅对控件应用安全区，避免挖孔侧出现整条空白。
  * - 底栏自己用 `navigationBarsPadding()` 贯通手势条。
  * - `Scaffold` 的 `contentWindowInsets` 置零，系统栏 insets 只由顶栏/底栏消费一次，避免重复留白。
  */
@@ -72,69 +82,74 @@ fun BottomNavigationApp(
     p2pScreen: @Composable () -> Unit,
     snackbarHostState: SnackbarState? = null,
     initialItem: NavigationItem = NavigationItem.READ,
+    safeDrawingInsets: WindowInsets = WindowInsets.safeDrawing,
 ) {
     var selectedItemIndex by rememberSaveable { mutableIntStateOf(initialItem.ordinal) }
     val pagerState = rememberPagerState(initialPage = selectedItemIndex, pageCount = { 3 })
     val coroutineScope = rememberCoroutineScope()
+    val pageAlpha = remember { Animatable(1f) }
 
     val navigationItems = listOf(NavigationItem.READ, NavigationItem.WRITE, NavigationItem.P2P)
 
-    // 用户滑动 pager 结束后，同步底部导航高亮（用 settledPage 避免动画中间帧干扰）
-    LaunchedEffect(pagerState.settledPage) {
-        selectedItemIndex = pagerState.settledPage
-    }
-
-    // 页面外边距需要在 Scaffold 之外算出来，才能同时用于顶栏与页面内容，
-    // 保证顶栏文字与页面文字共用同一条竖向基准线。
     AboutBottomSheet { openAbout ->
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val availableWidth = this.maxWidth
             val wide = availableWidth >= PageMetrics.mediumBreakpoint
-            val contentWidth = availableWidth - if (wide) 112.dp else 0.dp
+            val railInset = safeDrawingInsets.asPaddingValues().calculateStartPadding(LocalLayoutDirection.current)
+            val contentWidth = availableWidth - if (wide) 89.dp + railInset else 0.dp
             val gutter = PageMetrics.gutterFor(contentWidth)
+            // 进入窄屏时先同步当前页，再观察滑动；侧栏切换不驱动横向 Pager。
+            LaunchedEffect(wide, pagerState) {
+                if (!wide) {
+                    pagerState.scrollToPage(selectedItemIndex)
+                    snapshotFlow { pagerState.settledPage }.collect { selectedItemIndex = it }
+                }
+            }
+            LaunchedEffect(wide, selectedItemIndex) {
+                if (wide) {
+                    if (pagerState.currentPage != selectedItemIndex) {
+                        pageAlpha.animateTo(0f, tween(100))
+                        pagerState.scrollToPage(selectedItemIndex)
+                    }
+                    pageAlpha.animateTo(1f, tween(160))
+                } else pageAlpha.snapTo(1f)
+            }
             val selectPage: (Int) -> Unit = { index ->
                 selectedItemIndex = index
-                coroutineScope.launch { pagerState.animateScrollToPage(index) }
+                if (!wide) coroutineScope.launch { pagerState.animateScrollToPage(index) }
             }
             Scaffold(
-                // 系统栏 insets 由顶栏/底栏各自消费，避免 Scaffold 再叠加一层留白
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 containerColor = AppTheme.canvas,
                 snackbarHost = { FluentSnackbarHost(snackbarHostState) },
-                topBar = { AppTopBar(gutter, onAboutClick = openAbout) },
+                topBar = { if (!wide) AppTopBar(gutter, onAboutClick = openAbout) },
                 bottomBar = {
-                    if (!wide) AppBottomBar(
-                        tabs = navigationItems,
-                        selectedIndex = selectedItemIndex,
-                        onSelect = selectPage,
-                    )
+                    if (!wide) AppBottomBar(navigationItems, selectedItemIndex, selectPage)
                 }
             ) { innerPadding ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding).consumeWindowInsets(innerPadding)
-                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
-                ) {
-                    if (wide) AppNavigationRail(navigationItems, selectedItemIndex, selectPage)
+                Row(Modifier.fillMaxSize().padding(innerPadding).consumeWindowInsets(innerPadding)
+                    .then(if (wide) Modifier else Modifier.windowInsetsPadding(safeDrawingInsets.only(WindowInsetsSides.Horizontal)))
+                    .testTag("app-shell")) {
+                    if (wide) AppNavigationRail(navigationItems, selectedItemIndex, selectPage, openAbout, safeDrawingInsets)
                     Box(Modifier.weight(1f).fillMaxHeight()
-                        .then(if (wide) Modifier.navigationBarsPadding() else Modifier), contentAlignment = Alignment.TopCenter) {
-                        // 超宽屏幕上限制正文列宽，避免行长过长影响可读性。
-                        val contentModifier = if (contentWidth > PageMetrics.maxContentWidth) {
-                            Modifier.width(PageMetrics.maxContentWidth).fillMaxHeight()
-                        } else {
-                            Modifier.fillMaxSize()
-                        }
+                        .then(if (wide) Modifier.windowInsetsPadding(safeDrawingInsets.only(WindowInsetsSides.End + WindowInsetsSides.Vertical)) else Modifier)
+                        .testTag("app-page-viewport"), contentAlignment = Alignment.TopCenter) {
+                        val contentModifier = Modifier.widthIn(max = PageMetrics.maxContentWidth).fillMaxSize()
                         ProvidePageGutter(gutter) {
-                            HorizontalPager(
-                                state = pagerState,
-                                modifier = contentModifier,
-                                beyondViewportPageCount = 1
-                            ) { page ->
-                                when (page) {
-                                    0 -> readerScreen()
-                                    1 -> writeScreen()
-                                    2 -> p2pScreen()
+                            CompositionLocalProvider(LocalWideLayout provides wide) {
+                                // 复用同一个分页容器以保留表单状态；宽屏在透明时直接换页，不滚动过渡。
+                                HorizontalPager(
+                                    state = pagerState, modifier = contentModifier
+                                        .graphicsLayer { alpha = if (wide) pageAlpha.value else 1f }
+                                        .then(if (wide) Modifier.testTag("app-wide-pages") else Modifier),
+                                    beyondViewportPageCount = 1,
+                                    userScrollEnabled = !wide,
+                                ) { page ->
+                                    when (page) {
+                                        0 -> readerScreen()
+                                        1 -> writeScreen()
+                                        2 -> p2pScreen()
+                                    }
                                 }
                             }
                         }
@@ -279,27 +294,39 @@ private fun AppBottomBar(
     }
 }
 
-/** 宽屏导航保留 Fluent 图标与主题色，给横屏内容留出更多垂直空间。 */
+/** 侧栏背景延伸至挖孔区域，安全区只约束控件；导航居中，关于入口固定在底部。 */
 @Composable
-private fun AppNavigationRail(tabs: List<NavigationItem>, selectedIndex: Int, onSelect: (Int) -> Unit) {
+private fun AppNavigationRail(
+    tabs: List<NavigationItem>, selectedIndex: Int, onSelect: (Int) -> Unit,
+    onAboutClick: () -> Unit, insets: WindowInsets,
+) {
     val rippleColor = AppTheme.ripple
-    Row(Modifier.width(112.dp).fillMaxHeight().background(AppTheme.surface).testTag("app-navigation-rail")) {
-        Column(Modifier.weight(1f).fillMaxHeight().navigationBarsPadding().padding(vertical = FluentSpacing.m),
-            verticalArrangement = Arrangement.spacedBy(FluentSpacing.s)) {
-            tabs.forEachIndexed { index, item ->
-                val active = index == selectedIndex
-                val color = if (active) AppTheme.brand else AppTheme.textSecondary
-                Column(Modifier.fillMaxWidth().heightIn(min = 72.dp)
-                    .semantics { selected = active }
-                    .clickable(role = Role.Tab, indication = ripple(color = rippleColor),
-                        interactionSource = remember { MutableInteractionSource() }, onClick = { onSelect(index) })
-                    .padding(horizontal = FluentSpacing.s, vertical = FluentSpacing.m),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(FluentSpacing.xs, Alignment.CenterVertically)) {
-                    Icon(ImageVector.vectorResource(if (active) item.selectedIconResId else item.regularIconResId),
-                        contentDescription = null, modifier = Modifier.size(BottomTabIconSize), tint = color)
-                    FluentText(stringResource(item.titleResId), FluentTextStyle.Caption2, color = color, maxLines = 2)
+    Row(Modifier.fillMaxHeight().background(AppTheme.surface).testTag("app-navigation-rail")) {
+        BoxWithConstraints(Modifier.windowInsetsPadding(insets.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical))
+            .width(88.dp).fillMaxHeight()) {
+            val viewportHeight = this.maxHeight
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = viewportHeight)
+                .padding(vertical = FluentSpacing.s)) {
+                Spacer(Modifier.weight(1f))
+                tabs.forEachIndexed { index, item ->
+                    val active = index == selectedIndex
+                    val color = if (active) AppTheme.brand else AppTheme.textSecondary
+                    Column(Modifier.fillMaxWidth().heightIn(min = 64.dp).testTag("rail-tab-${item.name}")
+                        .semantics { selected = active }
+                        .clickable(role = Role.Tab, indication = ripple(color = rippleColor),
+                            interactionSource = remember { MutableInteractionSource() }, onClick = { onSelect(index) })
+                        .padding(horizontal = FluentSpacing.s, vertical = FluentSpacing.s),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(FluentSpacing.xs, Alignment.CenterVertically)) {
+                        Icon(ImageVector.vectorResource(if (active) item.selectedIconResId else item.regularIconResId),
+                            contentDescription = null, modifier = Modifier.size(BottomTabIconSize), tint = color)
+                        FluentText(stringResource(item.titleResId), FluentTextStyle.Caption2, color = color, maxLines = 2)
+                    }
                 }
+                Spacer(Modifier.weight(1f))
+                FluentButton(text = stringResource(R.string.about_title), onClick = onAboutClick,
+                    style = ButtonStyle.TextButton,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = PageMetrics.minTouchTarget).testTag("rail-about"))
             }
         }
         Box(Modifier.width(1.dp).fillMaxHeight().background(AppTheme.stroke))
@@ -385,6 +412,7 @@ private fun PreviewBottomNavigationAppDark() {
 @Preview(name = "平板 横屏深色", showBackground = true, widthDp = 1280, heightDp = 800,
     uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
 @Preview(name = "平板 竖屏", showBackground = true, widthDp = 800, heightDp = 1280)
+@Preview(name = "手机 横屏", showBackground = true, widthDp = 850, heightDp = 393)
 @Composable
 private fun PreviewTabletNavigation() {
     MyApplicationTheme(dynamicColor = false) {

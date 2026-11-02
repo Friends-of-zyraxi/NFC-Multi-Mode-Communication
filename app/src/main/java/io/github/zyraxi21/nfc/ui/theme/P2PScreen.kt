@@ -114,6 +114,11 @@ fun P2PScreen(
             RecordEditorScreen(WriteState.IDLE, "", onSendRecords, nearbyMode = true,
                 receivedResult = receivedResult, onRecordAction = onRecordAction, headerContent = controls)
         }
+    } else if (LocalWideLayout.current && receivedResult == null) {
+        CenteredStatusPage(Modifier.testTag("p2p-status")) {
+            FluentText(stringResource(R.string.p2p_title), FluentTextStyle.Title3)
+            controls()
+        }
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize().testTag("p2p-status"),
@@ -153,6 +158,20 @@ private fun PreviewP2PScreen() {
     MyApplicationTheme {
         P2PScreen(ConnectionState.DISCONNECTED, null, true, true, null,
             {}, {}, {}, {}, {}, {}, {}, {}, true, {})
+    }
+}
+
+@Preview(name = "端对端等待 横屏", showBackground = true, widthDp = 850, heightDp = 360)
+@Preview(name = "端对端等待 平板", showBackground = true, widthDp = 1280, heightDp = 800)
+@Preview(name = "端对端等待 横屏深色", showBackground = true, widthDp = 850, heightDp = 360,
+    uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun PreviewWideP2PStatus() {
+    MyApplicationTheme(dynamicColor = false) {
+        CompositionLocalProvider(LocalWideLayout provides true) {
+            P2PScreen(ConnectionState.DISCONNECTED, null, true, true, null,
+                {}, {}, {}, {}, {}, {}, {}, {}, true, {})
+        }
     }
 }
 

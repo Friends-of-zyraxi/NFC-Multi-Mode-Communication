@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +60,17 @@ fun NFCReaderScreen(
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    if (result == null && LocalWideLayout.current) {
+        CenteredStatusPage(Modifier.testTag("reader-results")) {
+            FluentText(stringResource(R.string.reader_title), FluentTextStyle.Title3,
+                modifier = Modifier.semantics { heading() })
+            ReaderScanPrompt()
+            if (isButtonVisible) FluentButton(onClick = onCheckNfcClick,
+                text = stringResource(R.string.reader_check_nfc),
+                modifier = Modifier.fillMaxWidth().heightIn(min = PageMetrics.minTouchTarget))
+        }
+        return
+    }
     // 扫描新标签时回到列表顶部，并清除上一张标签的展开状态。
     key(result) {
         var tagDetailsExpanded by rememberSaveable { mutableStateOf(false) }
@@ -153,6 +165,22 @@ fun NFCReaderScreen(
 
 @Composable
 private fun ReaderScanPrompt() {
+    if (LocalWideLayout.current) {
+        FluentCard(Modifier.fillMaxWidth().testTag("reader-scan-prompt")) {
+            Row(Modifier.padding(FluentSpacing.xl), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(FluentSpacing.xl)) {
+                Image(painterResource(R.drawable.ic_launcher_foreground), contentDescription = null,
+                    colorFilter = ColorFilter.tint(AppTheme.brand), modifier = Modifier.size(72.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
+                    FluentText(stringResource(R.string.reader_scan_hint), FluentTextStyle.Body1Strong, centered = false)
+                    ReaderDivider()
+                    FluentText(stringResource(R.string.reader_supported_formats), FluentTextStyle.Caption1,
+                        color = AppTheme.textSecondary, centered = false)
+                }
+            }
+        }
+        return
+    }
     FluentCard(Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = FluentSpacing.xl, vertical = FluentSpacing.xxxl),
@@ -342,4 +370,15 @@ private fun NFCReaderPreviewDark() {
 @Composable
 private fun NFCReaderPreviewEmpty() {
     MyApplicationTheme(darkTheme = false, dynamicColor = false) { NFCReaderScreen(null, false) }
+}
+
+@Preview(name = "读卡等待 横屏", showBackground = true, widthDp = 850, heightDp = 360)
+@Preview(name = "读卡等待 平板", showBackground = true, widthDp = 1280, heightDp = 800)
+@Preview(name = "读卡等待 横屏深色", showBackground = true, widthDp = 850, heightDp = 360,
+    uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun NFCReaderPreviewWideEmpty() {
+    MyApplicationTheme(dynamicColor = false) {
+        CompositionLocalProvider(LocalWideLayout provides true) { NFCReaderScreen(null, false) }
+    }
 }

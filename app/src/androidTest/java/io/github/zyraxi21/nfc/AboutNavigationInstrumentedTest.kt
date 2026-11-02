@@ -27,7 +27,7 @@ class AboutNavigationInstrumentedTest {
 
         compose.onNodeWithText(context.getString(R.string.nav_write)).performClick()
         compose.onNodeWithText("写卡内容").assertIsDisplayed()
-        compose.onNode(hasText(context.getString(R.string.app_title)) and hasClickAction()).performClick()
+        openAbout()
         compose.onNodeWithTag("about-sheet").assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.about_version, info.versionName.orEmpty()))
             .assertIsDisplayed()
@@ -40,12 +40,20 @@ class AboutNavigationInstrumentedTest {
     @Test
     fun titleOpensAboutInDarkThemeAndBackDismissesIt() {
         showApp(darkTheme = true)
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        compose.onNode(hasText(context.getString(R.string.app_title)) and hasClickAction()).performClick()
+        openAbout()
         compose.onNodeWithTag("about-sheet").assertIsDisplayed()
         Espresso.pressBack()
         compose.onNodeWithTag("about-sheet").assertIsNotDisplayed()
         compose.onNodeWithText("读卡内容").assertIsDisplayed()
+    }
+
+    private fun openAbout() {
+        if (compose.onAllNodesWithTag("rail-about").fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithTag("rail-about").performScrollTo().performClick()
+        } else {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            compose.onNode(hasText(context.getString(R.string.app_title)) and hasClickAction()).performClick()
+        }
     }
 
     private fun showApp(darkTheme: Boolean) {

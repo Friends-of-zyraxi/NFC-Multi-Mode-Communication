@@ -88,7 +88,7 @@
     <!-- ================================================================== -->
     <string name="reader_title">读取 NFC 标签</string>
     <string name="reader_check_nfc">检查 NFC 状态</string>
-    <string name="reader_scan_hint">将标签贴近手机 NFC 区域</string>
+    <string name="reader_scan_hint">将标签贴近设备的 NFC 区域</string>
     <string name="reader_display_hint">读取后，标签中的每条内容会分别显示在这里。</string>
     <string name="reader_supported_formats">支持文本、网址、Wi-Fi、蓝牙和应用程序</string>
     <string name="reader_tag_title">NFC 标签</string>

@@ -147,6 +147,9 @@ object PageMetrics {
 /** 自定义的页面宽度信息，避免在多处重复 BoxWithConstraints。 */
 val LocalPageGutter = staticCompositionLocalOf { PageMetrics.compactGutter }
 
+/** 由外壳按实际窗口宽度提供，页面据此安排宽屏内容。 */
+val LocalWideLayout = staticCompositionLocalOf { false }
+
 /** 高度令牌（Fluent 2 Elevation）。 */
 object FluentElevation {
     val flat: Dp = FluentGlobalTokens.ShadowTokens.Shadow00.value
