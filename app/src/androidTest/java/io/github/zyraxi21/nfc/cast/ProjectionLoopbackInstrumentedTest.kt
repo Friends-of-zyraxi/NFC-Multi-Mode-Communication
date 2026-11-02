@@ -66,7 +66,7 @@ class ProjectionLoopbackInstrumentedTest {
         val continuousFrames = CountDownLatch(15)
         val actualSizes = Collections.synchronizedList(mutableListOf<Pair<Int, Int>>())
         val actualBitrates = Collections.synchronizedList(mutableListOf<Int>())
-        val decoder = ScreenDecoder(input, id, { _, _ -> }, {}, { error.set(it) }, { encoder?.requestKeyFrame() },
+        val decoder = ScreenDecoder(context.resources, input, id, { _, _ -> }, {}, { error.set(it) }, { encoder?.requestKeyFrame() },
             onRendered = { pts ->
                 // 延迟反馈模拟慢链路，验证有界窗口仍持续推进，不会等下一包才能解码。
                 Handler(thread.looper).postDelayed({
@@ -92,7 +92,7 @@ class ProjectionLoopbackInstrumentedTest {
             val host = service.get(5, TimeUnit.SECONDS)
             instrumentation.runOnMainSync { host.foreground() }
             val projection = requireNotNull(context.getSystemService(MediaProjectionManager::class.java).getMediaProjection(capture.resultCode, requireNotNull(capture.data)))
-            encoder = ScreenEncoder(projection, output, id, context.resources.displayMetrics.densityDpi,
+            encoder = ScreenEncoder(context.resources, projection, output, id, context.resources.displayMetrics.densityDpi,
                 onSize = { width, height ->
                     actualSizes += width to height
                     val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)

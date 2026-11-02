@@ -1,5 +1,6 @@
 package io.github.zyraxi21.nfc.cast
 
+import android.content.res.Resources
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.MediaCodec
@@ -12,6 +13,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
 import android.view.Surface
+import io.github.zyraxi21.nfc.R
 import java.io.OutputStream
 import java.io.BufferedOutputStream
 import java.util.concurrent.ArrayBlockingQueue
@@ -21,6 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** 一次授权只创建一次 VirtualDisplay；旋转时更换编码 Surface，并在流内重新发送参数集。 */
 internal class ScreenEncoder(
+    private val resources: Resources,
     private val projection: MediaProjection,
     private val output: OutputStream,
     private val streamId: String,
@@ -46,10 +49,10 @@ internal class ScreenEncoder(
     private var frameRate = VideoQuality.TARGET_FPS
 
     private val callback = object : MediaProjection.Callback() {
-        override fun onStop() { if (!closed.get()) onError("系统已停止屏幕共享") }
+        override fun onStop() { if (!closed.get()) onError(resources.getString(R.string.cast_capture_stopped)) }
         override fun onCapturedContentResize(width: Int, height: Int) {
             if (!closed.get()) runCatching { configure(width, height) }
-                .onFailure { onError(if (it is NativeResolutionException) it.message!! else "无法调整共享画面尺寸") }
+                .onFailure { onError(if (it is NativeResolutionException) it.message!! else resources.getString(R.string.cast_error_resize)) }
         }
     }
 
@@ -62,7 +65,7 @@ internal class ScreenEncoder(
                     val packet = packets.poll(500, TimeUnit.MILLISECONDS) ?: continue
                     VideoWire.write(buffered, packet)
                 }
-            } catch (_: Exception) { if (!closed.get()) onError("视频发送中断，请重新开始共享") }
+            } catch (_: Exception) { if (!closed.get()) onError(resources.getString(R.string.cast_error_video_send)) }
         }
         handler.post {
             if (closed.get()) return@post
@@ -72,7 +75,7 @@ internal class ScreenEncoder(
                 display = projection.createVirtualDisplay("NFC screen sharing", width, height, density,
                     DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, surface, null, handler)
                 watchdog()
-            } catch (error: Exception) { if (!closed.get()) onError(if (error is NativeResolutionException) error.message!! else "无法启动录屏，请重新授权或检查设备编码能力") }
+            } catch (error: Exception) { if (!closed.get()) onError(if (error is NativeResolutionException) error.message!! else resources.getString(R.string.cast_error_encoder_start)) }
         }
     }
 
@@ -92,7 +95,7 @@ internal class ScreenEncoder(
                 val fps = caps.getSupportedFrameRatesFor(w, h).upper.toInt().coerceIn(1, VideoQuality.TARGET_FPS)
                 require(caps.areSizeAndRateSupported(w, h, fps.toDouble()))
                 NativeEncoder(info.name, w, h, fps, caps.bitrateRange.lower, caps.bitrateRange.upper)
-            }.getOrNull() } ?: throw NativeResolutionException("设备编码器不支持原始分辨率 ${sourceWidth}×${sourceHeight}")
+            }.getOrNull() } ?: throw NativeResolutionException(resources.getString(R.string.cast_error_native_resolution, sourceWidth, sourceHeight))
         val w = selected.width
         val h = selected.height
         android.util.Log.d("NativeCast", "Selected ${selected.name}: ${w}x${h}, ${selected.fps} fps")
@@ -138,7 +141,7 @@ internal class ScreenEncoder(
                     config = VideoPacket.Config(w, h, csd("csd-0"), csd("csd-1"))
                     packets.clear(); packets.offer(config!!); waitingForKey = true
                     onSize(w, h)
-                } catch (_: Exception) { onError("设备未提供有效的 AVC 编码参数") }
+                } catch (_: Exception) { onError(resources.getString(R.string.cast_error_avc_parameters)) }
             }
             override fun onOutputBufferAvailable(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
                 if (codec !== this@ScreenEncoder.codec || closed.get()) return
@@ -164,11 +167,11 @@ internal class ScreenEncoder(
                             }
                         }
                     }
-                } catch (_: Exception) { onError("视频编码失败") }
+                } catch (_: Exception) { onError(resources.getString(R.string.cast_error_encode)) }
                 finally { runCatching { codec.releaseOutputBuffer(index, false) } }
             }
             override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-                if (codec === this@ScreenEncoder.codec && !closed.get()) onError("设备视频编码器异常")
+                if (codec === this@ScreenEncoder.codec && !closed.get()) onError(resources.getString(R.string.cast_error_encoder))
             }
         }, handler)
         next.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)

@@ -27,6 +27,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.zyraxi21.nfc.MyHostApduService
+import io.github.zyraxi21.nfc.R
 import io.github.zyraxi21.nfc.ui.theme.MyApplicationTheme
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -43,13 +44,13 @@ class CastActivity : ComponentActivity() {
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         val action = pendingStart; pendingStart = null
         if (requiredPermissions().all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) action?.invoke()
-        else localMessage = "需要附近设备权限才能建立投屏连接，请授权后重试"
+        else localMessage = getString(R.string.cast_error_permissions)
     }
     private val capture = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
             val bounds = windowManager.maximumWindowMetrics.bounds
             service?.startCapture(result.resultCode, result.data!!, bounds.width(), bounds.height())
-        } else service?.stopVideo("已取消录屏授权，可重新选择投屏方向")
+        } else service?.stopVideo(getString(R.string.cast_capture_cancelled))
     }
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -78,7 +79,7 @@ class CastActivity : ComponentActivity() {
         }
         adapter = NfcAdapter.getDefaultAdapter(this)
         receivedInvite = (savedInstanceState?.getByteArray(EXTRA_INVITE) ?: intent.getByteArrayExtra(EXTRA_INVITE))
-            ?.let { runCatching { CastInvite.decode(it) }.onFailure { localMessage = "邀请已失效，请重新碰一碰" }.getOrNull() }
+            ?.let { runCatching { CastInvite.decode(it) }.onFailure { localMessage = getString(R.string.cast_error_invite_retry) }.getOrNull() }
         bound = bindService(Intent(this, CastSessionService::class.java), connection, Context.BIND_AUTO_CREATE)
         setContent {
             MyApplicationTheme {
@@ -100,12 +101,12 @@ class CastActivity : ComponentActivity() {
                     onCancelScan = { scanning = false; updateNfc() },
                     onRequestDirection = { session?.requestDirection(it) },
                     onAccept = { session?.acceptDirection() },
-                    onReject = { session?.stopVideo("已拒绝本次共享") },
+                    onReject = { session?.stopVideo(getString(R.string.cast_sharing_rejected)) },
                     onCapture = {
                         try { capture.launch(getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent()) }
-                        catch (_: Exception) { session?.stopVideo("无法打开系统录屏授权，请重试") }
+                        catch (_: Exception) { session?.stopVideo(getString(R.string.cast_error_capture_dialog)) }
                     },
-                    onStopVideo = { session?.stopVideo("本次共享已结束") },
+                    onStopVideo = { session?.stopVideo(getString(R.string.cast_sharing_ended)) },
                     onEnd = { session?.end(); scanning = false; receivedInvite = null; updateNfc() },
                     onBack = ::finishSession,
                     onHome = { startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)) },
@@ -134,11 +135,11 @@ class CastActivity : ComponentActivity() {
         }
         val bytes = intent.getByteArrayExtra(EXTRA_INVITE) ?: return
         val invite = runCatching { CastInvite.decode(bytes) }.getOrElse {
-            localMessage = "邀请已失效，请重新碰一碰"; return
+            localMessage = getString(R.string.cast_error_invite_retry); return
         }
         receivedInvite = invite
         if (service?.state?.value?.stage == CastStage.IDLE) start(false)
-        else localMessage = "已有屏幕共享连接，请先断开再加入新邀请"
+        else localMessage = getString(R.string.cast_error_invite_busy)
     }
 
     private fun start(host: Boolean) {
@@ -146,7 +147,7 @@ class CastActivity : ComponentActivity() {
         if (session.state.value.stage != CastStage.IDLE) return
         if (host && !checkNfc(true)) return
         val invite = receivedInvite
-        if (!host && (invite == null || !invite.valid())) { localMessage = "邀请已失效，请重新碰一碰"; return }
+        if (!host && (invite == null || !invite.valid())) { localMessage = getString(R.string.cast_error_invite_retry); return }
         val action = {
             scanning = false; localMessage = null
             session.begin(host, invite); updateNfc()
@@ -164,10 +165,10 @@ class CastActivity : ComponentActivity() {
 
     private fun checkNfc(host: Boolean): Boolean {
         if (adapter == null || (host && !packageManager.hasSystemFeature(PackageManager.FEATURE_NFC_HOST_CARD_EMULATION))) {
-            localMessage = if (host) "本机不支持 NFC 卡模拟，请用另一台设备生成邀请" else "本机不支持 NFC 读取"
+            localMessage = if (host) getString(R.string.cast_error_no_hce) else getString(R.string.cast_error_no_nfc)
             return false
         }
-        if (adapter?.isEnabled != true) { localMessage = "请先打开 NFC，再重试"; return false }
+        if (adapter?.isEnabled != true) { localMessage = getString(R.string.cast_error_nfc_disabled); return false }
         return true
     }
 
@@ -185,14 +186,14 @@ class CastActivity : ComponentActivity() {
                         val invite = readCastInvite(tag)
                         runOnUiThread { if (scanning) { receivedInvite = invite; scanning = false; start(false) } }
                     } catch (_: Exception) {
-                        runOnUiThread { localMessage = "未读到有效邀请，请让对方生成屏幕共享邀请后再靠近" }
+                        runOnUiThread { localMessage = getString(R.string.cast_error_no_invite) }
                     } finally { reading.set(false) }
                 }
             }, NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B, null)
             else if (service?.state?.value?.stage == CastStage.ADVERTISING) {
                 CardEmulation.getInstance(nfc).setPreferredService(this, ComponentName(this, MyHostApduService::class.java))
             }
-        }.onFailure { localMessage = "NFC 暂不可用，请检查开关后重试" }
+        }.onFailure { localMessage = getString(R.string.cast_error_nfc_unavailable) }
     }
 
     internal fun setFullscreen(full: Boolean) {

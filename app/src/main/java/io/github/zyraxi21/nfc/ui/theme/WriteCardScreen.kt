@@ -174,9 +174,9 @@ fun WriteCardScreen(
         headerContent = {
             FluentCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(FluentSpacing.mPlus), verticalArrangement = Arrangement.spacedBy(FluentSpacing.s)) {
-                    FluentText("屏幕共享邀请", FluentTextStyle.Body1Strong)
-                    FluentText("用卡模拟邀请另一台设备，连接后选择投屏方向。", FluentTextStyle.Caption1, color = AppTheme.textSecondary)
-                    FluentButton(text = "打开屏幕共享", style = ButtonStyle.OutlinedButton, enabled = writeState == WriteState.IDLE,
+                    FluentText(stringResource(R.string.cast_invite_type), FluentTextStyle.Body1Strong)
+                    FluentText(stringResource(R.string.cast_emulation_description), FluentTextStyle.Caption1, color = AppTheme.textSecondary)
+                    FluentButton(text = stringResource(R.string.cast_open_screen), style = ButtonStyle.OutlinedButton, enabled = writeState == WriteState.IDLE,
                         modifier = Modifier.fillMaxWidth().heightIn(min = PageMetrics.minTouchTarget),
                         onClick = { onOpenScreenShare?.invoke() ?: context.startActivity(Intent(context, CastActivity::class.java)) })
                 }

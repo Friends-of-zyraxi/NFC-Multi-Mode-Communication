@@ -1,11 +1,13 @@
 package io.github.zyraxi21.nfc.cast
 
+import android.content.res.Resources
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.os.SystemClock
 import android.os.Handler
 import android.os.HandlerThread
 import android.view.Surface
+import io.github.zyraxi21.nfc.R
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.Executors
@@ -15,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** Surface 与 Activity 分离：旋转或暂时离开接收页时仍排空网络流，返回后从关键帧恢复。 */
 internal class ScreenDecoder(
+    private val resources: Resources,
     private val input: InputStream,
     private val expectedId: String,
     private val onSize: (Int, Int) -> Unit,
@@ -63,10 +66,10 @@ internal class ScreenDecoder(
                         }
                     }
                 }
-                } catch (_: Exception) { if (!closed.get()) onError("视频解码失败，请重新开始共享") }
+                } catch (_: Exception) { if (!closed.get()) onError(resources.getString(R.string.cast_error_decode)) }
                 finally { queued.release() } }
             }
-        } catch (_: Exception) { if (!closed.get()) onError("视频接收中断或设备无法解码，请重新开始共享") }
+        } catch (_: Exception) { if (!closed.get()) onError(resources.getString(R.string.cast_error_video_receive)) }
         finally { runCatching { input.close() } }
     } }
 
@@ -74,7 +77,7 @@ internal class ScreenDecoder(
         if (closed.get()) return
         try { codec?.let { drain(it) } } catch (_: Exception) {
             if (target.get()?.isValid != true) { releaseCodec(); requestKey() }
-            else onError("视频解码器异常，请重新开始共享")
+            else onError(resources.getString(R.string.cast_error_decoder))
         }
         handler.postDelayed(::drainContinuously, 10)
     }

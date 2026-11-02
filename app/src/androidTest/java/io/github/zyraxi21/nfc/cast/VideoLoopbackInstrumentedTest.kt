@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,7 +42,8 @@ class VideoLoopbackInstrumentedTest {
         val error = AtomicReference<String?>(null)
         val sizes = Collections.synchronizedList(mutableListOf<Pair<Int, Int>>())
         val id = UUID.randomUUID().toString()
-        val decoder = ScreenDecoder(input, id, { w, h -> sizes += w to h }, {}, { error.set(it) }, {})
+        val decoder = ScreenDecoder(InstrumentationRegistry.getInstrumentation().targetContext.resources,
+            input, id, { w, h -> sizes += w to h }, {}, { error.set(it) }, {})
         try {
             decoder.attach(readers[0].surface); decoder.start()
             VideoWire.header(output, id)

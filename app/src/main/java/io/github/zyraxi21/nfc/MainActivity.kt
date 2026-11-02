@@ -348,7 +348,7 @@ class MainActivity : ComponentActivity() {
                             onDisconnect = { disconnectFromEndpoint() },
                             onSendRecords = { records ->
                                 if (CastSessionService.ownsNearby) {
-                                    showSnackbar("请先结束屏幕共享连接")
+                                    showSnackbar(getString(R.string.cast_error_end_existing))
                                 } else if (currentEndpointId != null && p2pConnectionState == ConnectionState.CONNECTED) {
                                     sendNearbyRecords(currentEndpointId!!, records)
                                 } else {
@@ -450,7 +450,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun armWriteRecords(records: List<NfcWriteRecord>) {
-        if (CastSessionService.ownsNearby) { showSnackbar("请先结束屏幕共享连接"); return }
+        if (CastSessionService.ownsNearby) { showSnackbar(getString(R.string.cast_error_end_existing)); return }
         if (writeState != WriteState.IDLE) return
         val message = prepareWriteMessage(records) ?: return
         pendingWriteMessage = message
@@ -459,7 +459,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startRecordEmulation(records: List<NfcWriteRecord>) {
-        if (CastSessionService.ownsNearby) { showSnackbar("请先结束屏幕共享连接"); return }
+        if (CastSessionService.ownsNearby) { showSnackbar(getString(R.string.cast_error_end_existing)); return }
         if (writeState != WriteState.IDLE) return
         val message = prepareWriteMessage(records) ?: return
         if (message.byteArrayLength > MAX_EMULATED_NDEF_BYTES) {
@@ -662,7 +662,7 @@ class MainActivity : ComponentActivity() {
     // 启动广告模式
     private fun startAdvertising() {
         if (CastSessionService.ownsNearby) {
-            showSnackbar("请先结束屏幕共享连接")
+            showSnackbar(getString(R.string.cast_error_end_existing))
             return
         }
         if (!checkNearbyPermissions()) {
@@ -703,7 +703,7 @@ class MainActivity : ComponentActivity() {
     // 启动发现模式
     private fun startDiscovery() {
         if (CastSessionService.ownsNearby) {
-            showSnackbar("请先结束屏幕共享连接")
+            showSnackbar(getString(R.string.cast_error_end_existing))
             return
         }
         if (!checkNearbyPermissions()) {
@@ -803,7 +803,7 @@ class MainActivity : ComponentActivity() {
 
     private fun openConnectedScreenSharing() {
         if (RecordNearbyLink.peer?.endpoint != currentEndpointId || currentEndpointId == null) {
-            showSnackbar("请先在端对端页面建立连接")
+            showSnackbar(getString(R.string.cast_error_connect_p2p_first))
             return
         }
         screenSharingRequested = false

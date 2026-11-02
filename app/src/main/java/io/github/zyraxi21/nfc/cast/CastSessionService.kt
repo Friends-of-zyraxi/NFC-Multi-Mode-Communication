@@ -75,7 +75,7 @@ class CastSessionService : Service() {
         val peer = RecordNearbyLink.peer
         if (peer == null || peer.token.isEmpty() || peer.code.isBlank()) {
             RecordNearbyLink.cancelReservation()
-            notice("端对端连接已失效，请返回端对端页面重新连接")
+            notice(getString(R.string.cast_error_p2p_expired))
             return
         }
         generation++
@@ -85,9 +85,9 @@ class CastSessionService : Service() {
         transportConnected = true; ownsNearby = true
         mutableState.value = CastUiState(CastStage.AUTHENTICATING, connectionCode = peer.code)
         if (!RecordNearbyLink.takeOver(this, peer, payloadCallback(ticket)) { id ->
-                main.post { if (generation == ticket && endpoint == id) end("对方已断开连接") }
-            }) { end("无法接管当前连接，请重新连接"); return }
-        try { promote(false) } catch (_: Exception) { end("无法启动连接服务，请返回应用后重试"); return }
+                main.post { if (generation == ticket && endpoint == id) end(getString(R.string.cast_peer_disconnected)) }
+            }) { end(getString(R.string.cast_error_takeover)); return }
+        try { promote(false) } catch (_: Exception) { end(getString(R.string.cast_error_start_service)); return }
         client.stopAdvertising(); client.stopDiscovery()
         val current = requireNotNull(invite)
         send(CastControl("join", current.session))
@@ -95,7 +95,7 @@ class CastSessionService : Service() {
         timeout = scope.launch {
             delay(120_000)
             if (ticket == generation && state.value.stage in listOf(CastStage.AUTHENTICATING, CastStage.VERIFYING)) {
-                end("对方未完成加入或验证码确认，请在端对端页面重新连接后重试")
+                end(getString(R.string.cast_error_verify_timeout))
             }
         }
     }
@@ -109,11 +109,11 @@ class CastSessionService : Service() {
     fun begin(asHost: Boolean, received: CastInvite? = null) {
         if (state.value.stage != CastStage.IDLE) return
         val next = if (asHost) CastInvite.create() else received
-        if (next == null || !next.valid()) { notice("邀请已失效，请让对方重新生成"); return }
+        if (next == null || !next.valid()) { notice(getString(R.string.cast_error_invite_regenerate)); return }
         generation++
         val ticket = generation
         invite = next; host = asHost; ownsNearby = true
-        try { promote(false) } catch (_: Exception) { end("无法启动连接服务，请返回应用后重试"); return }
+        try { promote(false) } catch (_: Exception) { end(getString(R.string.cast_error_start_service)); return }
         mutableState.value = CastUiState(if (host) CastStage.ADVERTISING else CastStage.DISCOVERING, expiresAt = next.expiresAt)
         val payloads = payloadCallback(ticket)
         val lifecycle = lifecycleCallback(ticket, payloads)
@@ -122,7 +122,7 @@ class CastSessionService : Service() {
                 AdvertisingOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).build())
                 .addOnSuccessListener {
                     if (ticket == generation) MyHostApduService.setEmulatedData(this, next.ndef(packageName).toByteArray(), INVITE_TYPE)
-                }.addOnFailureListener { if (ticket == generation) end("无法广播投屏邀请，请检查附近设备权限及蓝牙、Wi-Fi 开关") }
+                }.addOnFailureListener { if (ticket == generation) end(getString(R.string.cast_error_advertising)) }
         } else {
             client.startDiscovery(CastInvite.SERVICE, object : EndpointDiscoveryCallback() {
                 override fun onEndpointFound(id: String, info: DiscoveredEndpointInfo) { main.post {
@@ -130,15 +130,15 @@ class CastSessionService : Service() {
                     endpoint = id
                     mutableState.value = state.value.copy(stage = CastStage.CONNECTING)
                     client.requestConnection(next.session, id, lifecycle)
-                        .addOnFailureListener { if (ticket == generation) end("连接失败，请重新碰一碰") }
+                        .addOnFailureListener { if (ticket == generation) end(getString(R.string.cast_error_connect)) }
                 } }
                 override fun onEndpointLost(id: String) = Unit
             }, DiscoveryOptions.Builder().setStrategy(Strategy.P2P_POINT_TO_POINT).build())
-                .addOnFailureListener { if (ticket == generation) end("无法搜索投屏设备，请检查附近设备权限及蓝牙、Wi-Fi 开关") }
+                .addOnFailureListener { if (ticket == generation) end(getString(R.string.cast_error_discovery)) }
         }
         timeout = scope.launch {
             delay((next.expiresAt - System.currentTimeMillis()).coerceAtLeast(1))
-            if (ticket == generation && !peerProven) end("邀请已过期，请重新生成并碰一碰")
+            if (ticket == generation && !peerProven) end(getString(R.string.cast_error_invite_expired))
         }
     }
 
@@ -154,20 +154,20 @@ class CastSessionService : Service() {
             mutableState.value = state.value.copy(stage = CastStage.AUTHENTICATING)
             // 仅接受临时传输通道；验证 HMAC 前不允许角色协商或视频数据。
             client.acceptConnection(id, payloads)
-                .addOnFailureListener { if (ticket == generation) end("连接确认失败，请重试") }
+                .addOnFailureListener { if (ticket == generation) end(getString(R.string.cast_error_accept_connection)) }
             roleTimeout?.cancel()
-            roleTimeout = scope.launch { delay(12_000); if (ticket == generation && !peerProven) end("邀请凭据验证超时") }
+            roleTimeout = scope.launch { delay(12_000); if (ticket == generation && !peerProven) end(getString(R.string.cast_error_auth_timeout)) }
         } }
         override fun onConnectionResult(id: String, resolution: ConnectionResolution) { main.post {
             if (ticket != generation || endpoint != id) return@post
-            if (resolution.status.statusCode != ConnectionsStatusCodes.STATUS_OK) { end("连接未成功，请重新碰一碰"); return@post }
+            if (resolution.status.statusCode != ConnectionsStatusCodes.STATUS_OK) { end(getString(R.string.cast_error_connection_result)); return@post }
             transportConnected = true
             val current = requireNotNull(invite)
             send(CastControl("auth", current.session, current.proof(requireNotNull(authToken), host)))
             authenticated()
         } }
         override fun onDisconnected(id: String) { main.post {
-            if (ticket == generation && endpoint == id) end("对方已断开连接")
+            if (ticket == generation && endpoint == id) end(getString(R.string.cast_peer_disconnected))
         } }
     }
 
@@ -197,7 +197,7 @@ class CastSessionService : Service() {
                         val input = requireNotNull(payload.asStream()?.asInputStream())
                         videoPayload = payload.id
                         mutableState.value = state.value.copy(stage = CastStage.RECEIVING)
-                        decoder = ScreenDecoder(input, streamId,
+                        decoder = ScreenDecoder(resources, input, streamId,
                             onSize = { w, h -> main.post { if (proposal == streamId) mutableState.value = state.value.copy(width = w, height = h) } },
                             onFrame = { main.post { if (proposal == streamId) mutableState.value = state.value.copy(hasFrame = true) } },
                             onError = { message -> main.post { if (proposal == streamId) stopVideo(message) } },
@@ -207,12 +207,12 @@ class CastSessionService : Service() {
                     }
                     else -> client.cancelPayload(payload.id)
                 }
-            } catch (_: Exception) { end("投屏协议或连接凭据无效，请重新建立连接") }
+            } catch (_: Exception) { end(getString(R.string.cast_error_protocol)) }
         } }
         override fun onPayloadTransferUpdate(id: String, update: PayloadTransferUpdate) { main.post {
             if (ticket == generation && endpoint == id && update.payloadId == videoPayload &&
                 update.status in listOf(PayloadTransferUpdate.Status.FAILURE, PayloadTransferUpdate.Status.CANCELED)) {
-                stopVideo("视频传输已中断，可重新选择投屏方向")
+                stopVideo(getString(R.string.cast_error_transfer))
             }
         } }
     }
@@ -242,8 +242,8 @@ class CastSessionService : Service() {
                 mutableState.value = state.value.copy(stage = CastStage.PREPARING)
                 armRoleTimeout(message.id)
             }
-            "reject" -> if (proposal == message.id) stopVideo("对方已拒绝本次共享", notifyPeer = false)
-            "stop" -> if (proposal == message.id) stopVideo("本次共享已结束", notifyPeer = false)
+            "reject" -> if (proposal == message.id) stopVideo(getString(R.string.cast_peer_rejected), notifyPeer = false)
+            "stop" -> if (proposal == message.id) stopVideo(getString(R.string.cast_sharing_ended), notifyPeer = false)
             "key" -> if (proposal == message.id) encoder?.requestKeyFrame()
             "ack" -> if (proposal == message.id) message.value.toLongOrNull()?.takeIf { it >= 0 }?.let { encoder?.acknowledge(it) }
         }
@@ -282,7 +282,7 @@ class CastSessionService : Service() {
 
     private fun armRoleTimeout(id: String) {
         roleTimeout?.cancel()
-        roleTimeout = scope.launch { delay(120_000); if (proposal == id && encoder == null && decoder == null) stopVideo("共享请求已超时，请重新选择方向") }
+        roleTimeout = scope.launch { delay(120_000); if (proposal == id && encoder == null && decoder == null) stopVideo(getString(R.string.cast_error_request_timeout)) }
     }
 
     /** 只由可见 Activity 在系统授权 RESULT_OK 后调用，授权 Intent 从不持久化或复用。 */
@@ -301,7 +301,7 @@ class CastSessionService : Service() {
             output = ParcelFileDescriptor.AutoCloseOutputStream(writePipe)
             val payload = Payload.fromStream(readPipe)
             videoPayload = payload.id
-            encoder = ScreenEncoder(projection, output, id, resources.displayMetrics.densityDpi,
+            encoder = ScreenEncoder(resources, projection, output, id, resources.displayMetrics.densityDpi,
                 onSize = { w, h -> main.post { if (proposal == id) mutableState.value = state.value.copy(width = w, height = h) } },
                 onError = { message -> main.post { if (proposal == id) stopVideo(message) } },
                 onQuality = { bitrate, fps -> main.post { if (proposal == id) mutableState.value = state.value.copy(videoBitrate = bitrate, videoFrameRate = fps) } },
@@ -309,14 +309,14 @@ class CastSessionService : Service() {
             mutableState.value = state.value.copy(stage = CastStage.SENDING)
             roleTimeout?.cancel()
             client.sendPayload(requireNotNull(endpoint), payload).addOnFailureListener {
-                if (proposal == id) stopVideo("无法发送视频流，请重新开始共享")
+                if (proposal == id) stopVideo(getString(R.string.cast_error_send_stream))
             }
             encoder?.start(width, height)
             // Payload 持有读取端直到取消；写入端由 ScreenEncoder 关闭。
         } catch (_: Exception) {
             if (encoder == null) runCatching { projection?.stop() }
             runCatching { readPipe?.close() }; runCatching { output?.close() }; runCatching { writePipe?.close() }
-            stopVideo("无法开始录屏，请重新授权或检查设备支持情况")
+            stopVideo(getString(R.string.cast_error_start_capture))
         }
     }
 
@@ -343,7 +343,7 @@ class CastSessionService : Service() {
         val id = endpoint ?: return
         val ticket = generation
         client.sendPayload(id, Payload.fromBytes(message.encode())).addOnFailureListener {
-            if (ticket == generation) end("连接已中断，请重新建立连接")
+            if (ticket == generation) end(getString(R.string.cast_error_connection_lost))
         }
     }
 
@@ -372,13 +372,13 @@ class CastSessionService : Service() {
 
     private fun promote(projecting: Boolean) {
         val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "屏幕共享", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL, getString(R.string.cast_title), NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(this, 0, Intent(this, CastActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this, 0, Intent(this, CastSessionService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_fluent_arrow_swap_24_regular)
-            .setContentTitle(if (projecting) "正在共享本机屏幕" else "屏幕共享连接")
-            .setContentText("点此返回，或停止本次连接")
-            .setContentIntent(open).setOngoing(true).addAction(Notification.Action.Builder(null, "停止", stop).build()).build()
+            .setContentTitle(if (projecting) getString(R.string.cast_sending_title) else getString(R.string.cast_notification_connection))
+            .setContentText(getString(R.string.cast_notification_description))
+            .setContentIntent(open).setOngoing(true).addAction(Notification.Action.Builder(null, getString(R.string.cast_notification_stop), stop).build()).build()
         if (!foreground) startService(Intent(this, CastSessionService::class.java))
         val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
             if (projecting) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION else 0
