@@ -60,7 +60,8 @@ internal fun CastScreen(
     }
     // 全屏画面使用完整窗口；只有操作控件避开挖孔，不能给视频整体加安全区边距。
     Column(Modifier.fillMaxSize().background(if (full) Color.Black else AppTheme.canvas)
-        .then(if (full) Modifier else Modifier.safeDrawingPadding()).testTag("cast-screen")) {
+        .then(if (full) Modifier else Modifier.safeDrawingPadding()).testTag("cast-screen"),
+        horizontalAlignment = Alignment.CenterHorizontally) {
         if (!full) Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = FluentSpacing.mPlus).testTag("cast-top-bar")) {
             FluentText(stringResource(R.string.cast_title), FluentTextStyle.Title3,
                 modifier = Modifier.align(Alignment.Center).padding(horizontal = 72.dp).testTag("cast-title"))
@@ -69,7 +70,8 @@ internal fun CastScreen(
                 modifier = Modifier.align(Alignment.CenterEnd))
         }
         Column(
-            Modifier.weight(1f).fillMaxWidth()
+            Modifier.weight(1f)
+                .then(if (receiving) Modifier else Modifier.widthIn(max = PageMetrics.maxContentWidth)).fillMaxWidth()
                 .then(if (receiving) Modifier else Modifier.verticalScroll(rememberScrollState()).padding(FluentSpacing.mPlus)),
             verticalArrangement = if (receiving) Arrangement.Top else Arrangement.spacedBy(FluentSpacing.mPlus),
             horizontalAlignment = Alignment.CenterHorizontally,

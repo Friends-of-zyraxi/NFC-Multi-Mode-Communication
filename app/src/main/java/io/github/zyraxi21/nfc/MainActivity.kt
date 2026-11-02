@@ -39,6 +39,7 @@ import io.github.zyraxi21.nfc.ui.theme.NFCReaderScreen
 import io.github.zyraxi21.nfc.ui.theme.P2PScreen
 import io.github.zyraxi21.nfc.ui.theme.WriteCardScreen
 import io.github.zyraxi21.nfc.ui.theme.WriteState
+import io.github.zyraxi21.nfc.ui.theme.NavigationItem
 import io.github.zyraxi21.nfc.ui.theme.rememberRecordActionHandler
 import io.github.zyraxi21.nfc.util.createNearbyPayload
 import io.github.zyraxi21.nfc.util.parseNearbyPayload
@@ -362,7 +363,8 @@ class MainActivity : ComponentActivity() {
                             screenSharingRequested = screenSharingRequested,
                         )
                     },
-                    snackbarHostState = snackbarHostState
+                    snackbarHostState = snackbarHostState,
+                    initialItem = if (nfcAdapter == null) NavigationItem.P2P else NavigationItem.READ,
                 )
             }
         }

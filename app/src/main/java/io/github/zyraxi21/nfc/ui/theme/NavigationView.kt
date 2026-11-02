@@ -24,11 +24,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -68,9 +70,10 @@ fun BottomNavigationApp(
     readerScreen: @Composable () -> Unit,
     writeScreen: @Composable () -> Unit,
     p2pScreen: @Composable () -> Unit,
-    snackbarHostState: SnackbarState? = null
+    snackbarHostState: SnackbarState? = null,
+    initialItem: NavigationItem = NavigationItem.READ,
 ) {
-    var selectedItemIndex by rememberSaveable { mutableIntStateOf(0) }
+    var selectedItemIndex by rememberSaveable { mutableIntStateOf(initialItem.ordinal) }
     val pagerState = rememberPagerState(initialPage = selectedItemIndex, pageCount = { 3 })
     val coroutineScope = rememberCoroutineScope()
 
@@ -86,7 +89,13 @@ fun BottomNavigationApp(
     AboutBottomSheet { openAbout ->
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val availableWidth = this.maxWidth
-            val gutter = PageMetrics.gutterFor(availableWidth)
+            val wide = availableWidth >= PageMetrics.mediumBreakpoint
+            val contentWidth = availableWidth - if (wide) 112.dp else 0.dp
+            val gutter = PageMetrics.gutterFor(contentWidth)
+            val selectPage: (Int) -> Unit = { index ->
+                selectedItemIndex = index
+                coroutineScope.launch { pagerState.animateScrollToPage(index) }
+            }
             Scaffold(
                 // 系统栏 insets 由顶栏/底栏各自消费，避免 Scaffold 再叠加一层留白
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -94,38 +103,39 @@ fun BottomNavigationApp(
                 snackbarHost = { FluentSnackbarHost(snackbarHostState) },
                 topBar = { AppTopBar(gutter, onAboutClick = openAbout) },
                 bottomBar = {
-                    AppBottomBar(
+                    if (!wide) AppBottomBar(
                         tabs = navigationItems,
                         selectedIndex = selectedItemIndex,
-                        onSelect = { index ->
-                            selectedItemIndex = index
-                            coroutineScope.launch { pagerState.animateScrollToPage(index) }
-                        }
+                        onSelect = selectPage,
                     )
                 }
             ) { innerPadding ->
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(innerPadding),
-                    contentAlignment = Alignment.TopCenter
+                        .padding(innerPadding).consumeWindowInsets(innerPadding)
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
                 ) {
-                    // 超宽屏幕上限制正文列宽，避免行长过长影响可读性
-                    val contentModifier = if (availableWidth > PageMetrics.maxContentWidth) {
-                        Modifier.width(PageMetrics.maxContentWidth).fillMaxHeight()
-                    } else {
-                        Modifier.fillMaxSize()
-                    }
-                    ProvidePageGutter(gutter) {
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = contentModifier,
-                            beyondViewportPageCount = 1
-                        ) { page ->
-                            when (page) {
-                                0 -> readerScreen()
-                                1 -> writeScreen()
-                                2 -> p2pScreen()
+                    if (wide) AppNavigationRail(navigationItems, selectedItemIndex, selectPage)
+                    Box(Modifier.weight(1f).fillMaxHeight()
+                        .then(if (wide) Modifier.navigationBarsPadding() else Modifier), contentAlignment = Alignment.TopCenter) {
+                        // 超宽屏幕上限制正文列宽，避免行长过长影响可读性。
+                        val contentModifier = if (contentWidth > PageMetrics.maxContentWidth) {
+                            Modifier.width(PageMetrics.maxContentWidth).fillMaxHeight()
+                        } else {
+                            Modifier.fillMaxSize()
+                        }
+                        ProvidePageGutter(gutter) {
+                            HorizontalPager(
+                                state = pagerState,
+                                modifier = contentModifier,
+                                beyondViewportPageCount = 1
+                            ) { page ->
+                                when (page) {
+                                    0 -> readerScreen()
+                                    1 -> writeScreen()
+                                    2 -> p2pScreen()
+                                }
                             }
                         }
                     }
@@ -239,6 +249,7 @@ private fun AppBottomBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag("app-bottom-navigation")
             .background(AppTheme.surface)
     ) {
         // 顶部 1dp 描边：与 Fluent TabBar 的 topBorder 一致，用于分隔内容与底栏
@@ -265,6 +276,33 @@ private fun AppBottomBar(
                 )
             }
         }
+    }
+}
+
+/** 宽屏导航保留 Fluent 图标与主题色，给横屏内容留出更多垂直空间。 */
+@Composable
+private fun AppNavigationRail(tabs: List<NavigationItem>, selectedIndex: Int, onSelect: (Int) -> Unit) {
+    val rippleColor = AppTheme.ripple
+    Row(Modifier.width(112.dp).fillMaxHeight().background(AppTheme.surface).testTag("app-navigation-rail")) {
+        Column(Modifier.weight(1f).fillMaxHeight().navigationBarsPadding().padding(vertical = FluentSpacing.m),
+            verticalArrangement = Arrangement.spacedBy(FluentSpacing.s)) {
+            tabs.forEachIndexed { index, item ->
+                val active = index == selectedIndex
+                val color = if (active) AppTheme.brand else AppTheme.textSecondary
+                Column(Modifier.fillMaxWidth().heightIn(min = 72.dp)
+                    .semantics { selected = active }
+                    .clickable(role = Role.Tab, indication = ripple(color = rippleColor),
+                        interactionSource = remember { MutableInteractionSource() }, onClick = { onSelect(index) })
+                    .padding(horizontal = FluentSpacing.s, vertical = FluentSpacing.m),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(FluentSpacing.xs, Alignment.CenterVertically)) {
+                    Icon(ImageVector.vectorResource(if (active) item.selectedIconResId else item.regularIconResId),
+                        contentDescription = null, modifier = Modifier.size(BottomTabIconSize), tint = color)
+                    FluentText(stringResource(item.titleResId), FluentTextStyle.Caption2, color = color, maxLines = 2)
+                }
+            }
+        }
+        Box(Modifier.width(1.dp).fillMaxHeight().background(AppTheme.stroke))
     }
 }
 
@@ -319,7 +357,7 @@ private fun BottomTab(
     }
 }
 
-@Preview(name = "外壳 · 浅色", showBackground = true)
+@Preview(name = "外壳 浅色", showBackground = true)
 @Composable
 private fun PreviewBottomNavigationAppLight() {
     MyApplicationTheme(darkTheme = false, dynamicColor = false) {
@@ -331,7 +369,7 @@ private fun PreviewBottomNavigationAppLight() {
     }
 }
 
-@Preview(name = "外壳 · 深色", showBackground = true)
+@Preview(name = "外壳 深色", showBackground = true)
 @Composable
 private fun PreviewBottomNavigationAppDark() {
     MyApplicationTheme(darkTheme = true, dynamicColor = false) {
@@ -340,5 +378,20 @@ private fun PreviewBottomNavigationAppDark() {
             writeScreen = {},
             p2pScreen = {}
         )
+    }
+}
+
+@Preview(name = "平板 横屏浅色", showBackground = true, widthDp = 1280, heightDp = 800)
+@Preview(name = "平板 横屏深色", showBackground = true, widthDp = 1280, heightDp = 800,
+    uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "平板 竖屏", showBackground = true, widthDp = 800, heightDp = 1280)
+@Composable
+private fun PreviewTabletNavigation() {
+    MyApplicationTheme(dynamicColor = false) {
+        BottomNavigationApp(readerScreen = { NFCReaderScreen(null, false) },
+            writeScreen = { WriteCardScreen(WriteState.IDLE, "", {}, onOpenScreenShare = {}) },
+            p2pScreen = { P2PScreen(ConnectionState.DISCONNECTED, null, true, true, null,
+                {}, {}, {}, {}, {}, {}, {}, {}, true, {}) },
+            initialItem = NavigationItem.P2P)
     }
 }
