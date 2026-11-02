@@ -142,15 +142,15 @@ internal fun CastScreen(
                     FluentButton(onClick = onStopVideo, text = stringResource(R.string.cast_stop_sharing), style = ButtonStyle.OutlinedButton, modifier = Modifier.fillMaxWidth())
                 }
                 CastStage.RECEIVING -> {
-                    // 比例不同时保留完整画面，剩余区域始终为纯黑色。
-                    Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black).testTag("cast-viewport"), contentAlignment = Alignment.Center) {
+                    // 全屏以纯黑色补边，非全屏保留当前页面的主题背景。
+                    Box(Modifier.weight(1f).fillMaxWidth().background(if (full) Color.Black else AppTheme.canvas).testTag("cast-viewport"), contentAlignment = Alignment.Center) {
                         val width = state.width
                         val height = state.height
                         val ratio = if (width > 0 && height > 0) width.toFloat() / height else 9f / 16
                         val surfaceCallback by rememberUpdatedState(onSurface)
                         if (isPreview) {
                             Box(Modifier.aspectRatio(ratio).testTag("cast-video"), contentAlignment = Alignment.Center) {
-                                FluentText(stringResource(R.string.cast_preview_video), FluentTextStyle.Body1, color = Color.White)
+                                FluentText(stringResource(R.string.cast_preview_video), FluentTextStyle.Body1, color = if (full) Color.White else AppTheme.textPrimary)
                             }
                         } else AndroidView(
                             factory = { context -> SurfaceView(context).apply {
@@ -162,7 +162,7 @@ internal fun CastScreen(
                             } },
                             modifier = Modifier.aspectRatio(ratio).testTag("cast-video"),
                         )
-                        if (!state.hasFrame) FluentText(stringResource(R.string.cast_waiting_frame), FluentTextStyle.Body1, color = Color.White)
+                        if (!state.hasFrame) FluentText(stringResource(R.string.cast_waiting_frame), FluentTextStyle.Body1, color = if (full) Color.White else AppTheme.textPrimary)
                         if (full) Box(Modifier.align(Alignment.TopEnd)
                             .windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.systemBars))
                             .padding(FluentSpacing.m)) {

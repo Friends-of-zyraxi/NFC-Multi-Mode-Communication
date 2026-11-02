@@ -6,9 +6,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.zyraxi21.nfc.ui.theme.MyApplicationTheme
+import io.github.zyraxi21.nfc.ui.theme.AppTheme
 import io.github.zyraxi21.nfc.ui.theme.NFCReaderScreen
 import io.github.zyraxi21.nfc.util.RecordAction
 import io.github.zyraxi21.nfc.util.parseNfcReadResult
@@ -90,6 +92,22 @@ class CastUiInstrumentedTest {
         compose.onNodeWithText("退出全屏").performClick()
         compose.onNodeWithText("结束共享").performClick()
         compose.runOnIdle { assertEquals(1, stopped) }
+    }
+
+    @Test fun receiverUsesPageBackgroundOutsideFullscreenInBothThemes() {
+        val dark = mutableStateOf(false)
+        var expectedBackground = 0
+        compose.setContent { MyApplicationTheme(darkTheme = dark.value, dynamicColor = false) {
+            expectedBackground = AppTheme.canvas.toArgb()
+            screen(CastUiState(CastStage.RECEIVING, width = 1280, height = 720))
+        } }
+        fun checkBackground() {
+            val pixel = compose.onNodeWithTag("cast-viewport").captureToImage().asAndroidBitmap().getPixel(0, 0)
+            compose.runOnIdle { assertEquals(expectedBackground, pixel) }
+        }
+        checkBackground()
+        compose.runOnIdle { dark.value = true }
+        checkBackground()
     }
 
     @Test fun inviteHomeUsesFluentControlsInBothThemes() {
