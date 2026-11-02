@@ -31,8 +31,6 @@ import io.github.zyraxi21.nfc.R
 import io.github.zyraxi21.nfc.util.MAX_EMULATED_NDEF_BYTES
 import io.github.zyraxi21.nfc.util.NfcWriteRecord
 import io.github.zyraxi21.nfc.util.createNfcWriteMessage
-import io.github.zyraxi21.nfc.util.NfcReadResult
-import io.github.zyraxi21.nfc.util.RecordAction
 import io.github.zyraxi21.nfc.util.MAX_NEARBY_NDEF_BYTES
 import kotlinx.coroutines.launch
 
@@ -193,8 +191,6 @@ internal fun RecordEditorScreen(
     onStartEmulation: (List<NfcWriteRecord>) -> Unit = {},
     onCancelWrite: () -> Unit = {},
     nearbyMode: Boolean = false,
-    receivedResult: NfcReadResult? = null,
-    onRecordAction: ((RecordAction) -> Unit)? = null,
     headerContent: (@Composable () -> Unit)? = null,
 ) {
     val focusManager = LocalFocusManager.current
@@ -215,6 +211,7 @@ internal fun RecordEditorScreen(
     val canWrite = writeState == WriteState.IDLE && message != null &&
         (!nearbyMode || message.byteArrayLength <= MAX_NEARBY_NDEF_BYTES)
     val canEmulate = canWrite && message.byteArrayLength <= MAX_EMULATED_NDEF_BYTES
+    val recordStartIndex = if (headerContent == null) 1 else 2
 
     fun update(draft: WriteRecordDraft) {
         drafts = drafts.map { if (it.id == draft.id) draft else it }
@@ -224,7 +221,7 @@ internal fun RecordEditorScreen(
         val target = from + delta
         if (from < 0 || target !in drafts.indices) return
         drafts = drafts.toMutableList().apply { add(target, removeAt(from)) }
-        scope.launch { listState.animateScrollToItem(target + 1) }
+        scope.launch { listState.animateScrollToItem(target + recordStartIndex) }
     }
 
     Box(
@@ -240,17 +237,13 @@ internal fun RecordEditorScreen(
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(FluentSpacing.s)) {
-                    FluentText(stringResource(if (nearbyMode) R.string.p2p_title else R.string.title_write_card), FluentTextStyle.Title3,
+                    FluentText(stringResource(if (nearbyMode) R.string.p2p_send_heading else R.string.title_write_card), FluentTextStyle.Title3,
                         modifier = Modifier.semantics { heading() })
+                    if (nearbyMode) FluentText(stringResource(R.string.p2p_send_hint), FluentTextStyle.Caption1,
+                        color = AppTheme.textSecondary)
                 }
             }
             headerContent?.let { item { it() } }
-            if (nearbyMode) {
-                item { NearbyReceivedHeading(receivedResult) }
-                itemsIndexed(receivedResult?.records.orEmpty(), key = { index, _ -> "received-$index" }) { index, record ->
-                    ReaderRecordCard(record, index, onRecordAction)
-                }
-            }
             itemsIndexed(drafts, key = { _, draft -> draft.id }) { index, draft ->
                 val expanded = expandedId == draft.id
                 FluentCard(Modifier.fillMaxWidth().testTag("write-record-" + draft.id)) {
@@ -271,7 +264,7 @@ internal fun RecordEditorScreen(
                                 onClick = {
                                     focusManager.clearFocus()
                                     expandedId = if (expanded) null else draft.id
-                                    if (!expanded) scope.launch { listState.animateScrollToItem(index + 1) }
+                                    if (!expanded) scope.launch { listState.animateScrollToItem(index + recordStartIndex) }
                                 },
                             )
                         }
@@ -327,7 +320,7 @@ internal fun RecordEditorScreen(
                         val added = WriteRecordDraft(nextId++)
                         drafts = drafts + added
                         expandedId = added.id
-                        scope.launch { listState.animateScrollToItem(drafts.size) }
+                        scope.launch { listState.animateScrollToItem(drafts.lastIndex + recordStartIndex) }
                     },
                 )
             }

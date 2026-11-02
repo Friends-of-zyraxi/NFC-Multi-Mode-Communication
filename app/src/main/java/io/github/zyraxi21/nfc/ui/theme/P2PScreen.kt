@@ -1,5 +1,6 @@
 package io.github.zyraxi21.nfc.ui.theme
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -12,6 +13,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
@@ -23,6 +26,8 @@ import io.github.zyraxi21.nfc.util.NfcReadResult
 import io.github.zyraxi21.nfc.util.NfcWriteRecord
 import io.github.zyraxi21.nfc.util.RecordAction
 import io.github.zyraxi21.nfc.util.copyText
+import io.github.zyraxi21.nfc.util.createNearbyPayload
+import io.github.zyraxi21.nfc.util.parseNearbyPayload
 
 enum class ConnectionState { DISCONNECTED, ADVERTISING, DISCOVERING, CONNECTING, CONNECTED }
 
@@ -48,6 +53,7 @@ fun P2PScreen(
     screenSharingRequested: Boolean = false,
 ) {
     val editorState = rememberSaveableStateHolder()
+    var messagePane by rememberSaveable { mutableStateOf(NearbyMessagePane.SEND) }
     var permissionRequested by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(hasPermissions) {
         if (!hasPermissions && !permissionRequested) {
@@ -110,9 +116,16 @@ fun P2PScreen(
         }
     }
     if (connectionState == ConnectionState.CONNECTED && hasPermissions) {
-        editorState.SaveableStateProvider("records") {
-            RecordEditorScreen(WriteState.IDLE, "", onSendRecords, nearbyMode = true,
-                receivedResult = receivedResult, onRecordAction = onRecordAction, headerContent = controls)
+        Column(Modifier.fillMaxSize()) {
+            NearbyMessageTabs(messagePane, receivedResult?.records?.size ?: 0, { messagePane = it },
+                Modifier.padding(horizontal = LocalPageGutter.current, vertical = FluentSpacing.mPlus))
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                if (messagePane == NearbyMessagePane.SEND) editorState.SaveableStateProvider("records") {
+                    RecordEditorScreen(WriteState.IDLE, "", onSendRecords, nearbyMode = true, headerContent = controls)
+                } else editorState.SaveableStateProvider("received") {
+                    NearbyReceivedPane(receivedResult, onRecordAction, controls)
+                }
+            }
         }
     } else if (LocalWideLayout.current && receivedResult == null) {
         CenteredStatusPage(Modifier.testTag("p2p-status")) {
@@ -140,7 +153,9 @@ internal fun NearbyReceivedHeading(result: NfcReadResult?) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     Column(verticalArrangement = Arrangement.spacedBy(FluentSpacing.s)) {
-        FluentText(stringResource(R.string.p2p_label_received), FluentTextStyle.Body1Strong)
+        FluentText(stringResource(R.string.p2p_label_received), FluentTextStyle.Title3,
+            modifier = Modifier.semantics { heading() })
+        FluentText(stringResource(R.string.p2p_received_hint), FluentTextStyle.Caption1, color = AppTheme.textSecondary)
         if (result == null) {
             FluentText(stringResource(R.string.p2p_placeholder_waiting), FluentTextStyle.Body2, color = AppTheme.textHint)
         } else {
@@ -148,6 +163,41 @@ internal fun NearbyReceivedHeading(result: NfcReadResult?) {
                 FluentTextStyle.Caption1, color = AppTheme.textSecondary)
             FluentButton(text = stringResource(R.string.reader_copy_all), style = ButtonStyle.TextButton,
                 onClick = { clipboard.setText(AnnotatedString(result.copyText(context))) })
+        }
+    }
+}
+
+@Composable
+private fun NearbyReceivedPane(result: NfcReadResult?, onRecordAction: ((RecordAction) -> Unit)?,
+    headerContent: (@Composable () -> Unit)? = null) {
+    key(result) {
+        LazyColumn(Modifier.fillMaxSize().testTag("p2p-received"),
+            contentPadding = PaddingValues(horizontal = LocalPageGutter.current, vertical = FluentSpacing.mPlus),
+            verticalArrangement = Arrangement.spacedBy(FluentSpacing.mPlus)) {
+            headerContent?.let { item { it() } }
+            item { NearbyReceivedHeading(result) }
+            itemsIndexed(result?.records.orEmpty(), key = { index, _ -> "received-$index" }) { index, record ->
+                ReaderRecordCard(record, index, onRecordAction)
+            }
+        }
+    }
+}
+
+@Preview(name = "端对端接收区 浅色", showBackground = true, widthDp = 393, heightDp = 852)
+@Preview(name = "端对端接收区 深色", showBackground = true, widthDp = 393, heightDp = 852,
+    uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "端对端接收区 横屏", showBackground = true, widthDp = 850, heightDp = 360)
+@Composable
+private fun PreviewNearbyReceivedPane() {
+    val context = LocalContext.current
+    val result = remember(context) { parseNearbyPayload(context, createNearbyPayload(listOf(
+        NfcWriteRecord.Text(context.getString(R.string.p2p_preview_received_text)),
+        NfcWriteRecord.Link("https://example.org")))) }
+    MyApplicationTheme(dynamicColor = false) {
+        Column(Modifier.fillMaxSize().background(AppTheme.canvas)) {
+            NearbyMessageTabs(NearbyMessagePane.RECEIVED, result.records.size, {},
+                Modifier.padding(FluentSpacing.mPlus))
+            Box(Modifier.weight(1f)) { NearbyReceivedPane(result, null) }
         }
     }
 }
