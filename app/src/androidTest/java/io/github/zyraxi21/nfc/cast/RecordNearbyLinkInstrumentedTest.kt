@@ -89,6 +89,25 @@ class RecordNearbyLinkInstrumentedTest {
         assertEquals(1, disconnected)
     }
 
+    @Test fun bandwidthQualitySurvivesHandoffAndCannotLeakAcrossConnections() {
+        val owner = Any()
+        val quality = mutableListOf<Int>()
+        instrumentation.runOnMainSync {
+            RecordNearbyLink.rememberBandwidth("unrelated-peer", BandwidthInfo.Quality.HIGH)
+            RecordNearbyLink.rememberBandwidth(peer.endpoint, BandwidthInfo.Quality.LOW)
+            assertTrue(RecordNearbyLink.takeOver(owner, peer, castCallback) {})
+            RecordNearbyLink.watchBandwidth(owner) { quality += it }
+            RecordNearbyLink.watchBandwidth(Any()) { fail("非连接持有者不能订阅") }
+            RecordNearbyLink.rememberBandwidth(peer.endpoint, BandwidthInfo.Quality.HIGH)
+            assertEquals(listOf(BandwidthInfo.Quality.LOW, BandwidthInfo.Quality.HIGH), quality)
+            RecordNearbyLink.release(owner)
+            RecordNearbyLink.rememberConnected(peer)
+            assertTrue(RecordNearbyLink.takeOver(owner, peer, castCallback) {})
+            RecordNearbyLink.watchBandwidth(owner) { quality += it }
+            assertEquals(BandwidthInfo.Quality.UNKNOWN, quality.last())
+        }
+    }
+
     @Test fun lateSuccessfulConnectionCallbackCannotReviveAReleasedEndpoint() {
         instrumentation.runOnMainSync { RecordNearbyLink.reset() }
         RecordNearbyLink.lifecycle.onConnectionResult(peer.endpoint,

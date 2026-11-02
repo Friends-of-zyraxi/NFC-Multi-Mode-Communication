@@ -123,3 +123,5 @@
 [2026.11.02.1]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/compare/v2026.11.01.1...v2026.11.02.1
 [2026.11.01.1]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/compare/v2026.10.07.1...v2026.11.01.1
 [2026.10.07.1]: https://github.com/Friends-of-zyraxi/NFC-Multi-Mode-Communication/releases/tag/v2026.10.07.1
+- 主界面支持横竖屏和窗口宽度变化，宽屏使用 Fluent 风格侧边导航；没有 NFC 的设备默认进入端对端页面，旋转时保留当前连接
+- 投屏降码率增加共享冷却并支持稳定中等反馈耗时下恢复，合并恢复关键帧请求；优先选择适配画面尺寸的硬件解码器，增加连接带宽等级、已确认吞吐、反馈耗时及编解码器详情

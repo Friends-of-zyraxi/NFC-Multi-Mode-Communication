@@ -152,6 +152,23 @@ class CastUiInstrumentedTest {
         checkBackground()
     }
 
+    @Test fun connectionDetailsShowReportedCapacityAndConfirmedThroughputAndDisappearInFullscreen() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val state = mutableStateOf(CastUiState(CastStage.SENDING,
+            linkQuality = com.google.android.gms.nearby.connection.BandwidthInfo.Quality.LOW,
+            videoBitrate = 20_000_000, videoFrameRate = 30, confirmedBitrate = 1_000_000,
+            feedbackMs = 450, pendingFrames = 3, codecName = "AVC", hardwareCodec = true))
+        compose.setContent { MyApplicationTheme { screen(state.value) } }
+        compose.onNodeWithText(context.getString(io.github.zyraxi21.nfc.R.string.cast_details_show)).performScrollTo().performClick()
+        compose.onNodeWithText(context.getString(io.github.zyraxi21.nfc.R.string.cast_transport_metrics, 1.0, 450L, 3)).assertExists()
+        compose.onNodeWithText(context.getString(io.github.zyraxi21.nfc.R.string.cast_link_low_hint)).assertExists()
+        compose.runOnIdle { state.value = CastUiState(CastStage.RECEIVING, width = 1280, height = 720, hasFrame = true) }
+        compose.onNodeWithText(context.getString(io.github.zyraxi21.nfc.R.string.cast_details_show)).performClick()
+        compose.onNodeWithTag("cast-connection-details").assertIsDisplayed()
+        compose.onNodeWithText("全屏查看").performClick()
+        compose.onNodeWithTag("cast-connection-details").assertDoesNotExist()
+    }
+
     @Test fun inviteHomeUsesFluentControlsInBothThemes() {
         val dark = mutableStateOf(false)
         compose.setContent { MyApplicationTheme(darkTheme = dark.value, dynamicColor = false) { screen(CastUiState()) } }

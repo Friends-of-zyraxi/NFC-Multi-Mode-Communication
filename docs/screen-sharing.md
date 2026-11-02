@@ -49,6 +49,8 @@
 - 单个 STREAM 包含固定魔数、版本、共享 ID，随后顺序写入尺寸、SPS/PPS 和带时间戳的帧。尺寸和视频帧在同一条流内，避免 BYTES 与 STREAM 之间的顺序不确定性。
 - 协议支持单边最多 8192 像素、总像素最多 33,554,432 的尺寸，每帧最多 8 MiB，参数集最多各 64 KiB；接收端先检查长度，再分配缓冲区。正常传输最多保留四帧等待接收确认，窗口满时丢弃过时画面并等待新的关键帧；旋转和显示 Surface 重建时重置窗口。确认迟缓时降低码率，不再因为固定 15 秒阈值中断慢速共享；连接错误仍由 Nearby 及流读取错误处理。
 - 网络读取和解码分别运行，解码线程每 10 ms 排空输出，避免等待网络下一包时已解码画面滞留；临时离开接收页时继续确认已丢弃的帧，保持传输可恢复。
+- 延迟反馈和看门狗共用 1 秒降码率冷却，同一批迟到确认不会逐帧连续降码率；反馈稳定在 300 ms 以内时也可逐步恢复。恢复关键帧请求合并，等待关键帧或超时后再请求，避免每次确认都触发关键帧。
+- 解码器按当前画面尺寸优先选择支持的硬件实现。连接详情展示 Nearby 最近报告的带宽等级、发送端已确认吞吐及反馈耗时，以及实际编解码器；普通端对端连接移交给投屏时保留并继续更新带宽等级。等级不等于具体无线介质，已确认吞吐和反馈耗时包含接收处理，不能据此认定使用了某种 Wi-Fi 模式或仅测得无线带宽。
 - 源端内容尺寸变化时调整同一个 VirtualDisplay，并更换编码 Surface；不为旋转再次创建 VirtualDisplay。
 - 接收端独立处理界面方向、源画面比例和 Surface 生命周期，Surface 重建后等待关键帧恢复。暂时离开接收页时继续排空数据，不累积待显示画面。
 - 接收画面始终等比适配；全屏时以纯黑色填充剩余区域，非全屏时沿用当前页面的浅色或深色主题背景。
@@ -75,5 +77,6 @@
 - [MediaProjection 与尺寸调整](https://developer.android.com/media/grow/media-projection)
 - [媒体投影前台服务](https://developer.android.com/develop/background-work/services/fgs/service-types#media-projection)
 - [Nearby 连接及认证](https://developers.google.com/nearby/connections/android/manage-connections)
+- [Nearby 连接带宽等级](https://developers.google.com/android/reference/com/google/android/gms/nearby/connection/BandwidthInfo)
 - [Nearby 数据流](https://developers.google.com/nearby/connections/android/exchange-data)
 - [Android NFC 分发](https://developer.android.com/develop/connectivity/nfc/nfc)

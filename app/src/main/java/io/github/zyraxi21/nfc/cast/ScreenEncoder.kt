@@ -31,6 +31,8 @@ internal class ScreenEncoder(
     private val onSize: (Int, Int) -> Unit,
     private val onError: (String) -> Unit,
     private val onQuality: (Int, Int) -> Unit = { _, _ -> },
+    private val onTransport: (VideoTransportStats) -> Unit = {},
+    private val onCodec: (String, Boolean) -> Unit = { _, _ -> },
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val thread = HandlerThread("screen-encoder").apply { start() }
@@ -38,6 +40,7 @@ internal class ScreenEncoder(
     private val writer = Executors.newSingleThreadExecutor()
     private val packets = ArrayBlockingQueue<VideoPacket>(8)
     private val flow = VideoFlowControl()
+    private var keyFrames = KeyFrameGate()
     private var codec: MediaCodec? = null
     private var surface: Surface? = null
     private var display: VirtualDisplay? = null
@@ -105,6 +108,7 @@ internal class ScreenEncoder(
         runCatching { oldCodec?.stop() }; runCatching { oldCodec?.release() }
         surface?.release(); surface = null
         width = w; height = h; config = null; waitingForKey = true; packets.clear()
+        keyFrames = KeyFrameGate()
         frameRate = selected.fps
         val maximum = selected.maxBitrate.coerceAtMost(VideoQuality.MAX_BITRATE)
         val minimum = VideoQuality.MIN_BITRATE.coerceAtMost(maximum).coerceAtLeast(selected.minBitrate)
@@ -150,7 +154,7 @@ internal class ScreenEncoder(
                         require(info.size <= VideoWire.MAX_FRAME)
                         val key = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
                         if (config != null && (!waitingForKey || key)) {
-                            if (!flow.reserve(info.presentationTimeUs.coerceAtLeast(0), SystemClock.elapsedRealtime())) {
+                            if (!flow.reserve(info.presentationTimeUs.coerceAtLeast(0), SystemClock.elapsedRealtime(), info.size)) {
                                 waitingForKey = true
                                 return
                             }
@@ -159,7 +163,7 @@ internal class ScreenEncoder(
                                 position(info.offset); limit(info.offset + info.size); get(bytes)
                             }
                             if (packets.offer(VideoPacket.Frame(key, info.presentationTimeUs.coerceAtLeast(0), bytes))) {
-                                if (key) waitingForKey = false
+                                if (key) { waitingForKey = false; keyFrames.received() }
                             } else {
                                 // 丢弃整个未发送 GOP，等待新的关键帧，避免解码损坏及延迟无限增长。
                                 packets.clear(); flow.resetFrames(); config?.let { packets.offer(it) }; waitingForKey = true
@@ -177,22 +181,26 @@ internal class ScreenEncoder(
         next.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         surface = next.createInputSurface()
         next.start()
+        onCodec(next.name, next.codecInfo.isHardwareAccelerated)
         display?.apply { resize(w, h, density); surface = this@ScreenEncoder.surface }
     }
 
     fun requestKeyFrame() { handler.post {
-        flow.resetFrames()
-        if (!closed.get()) runCatching { codec?.setParameters(Bundle().apply {
+        requestSyncFrame(resetWindow = true)
+    } }
+
+    private fun requestSyncFrame(resetWindow: Boolean = false) {
+        if (closed.get() || !keyFrames.request(SystemClock.elapsedRealtime())) return
+        if (resetWindow) flow.resetFrames()
+        runCatching { codec?.setParameters(Bundle().apply {
             putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
         }) }
-    } }
+    }
 
     fun acknowledge(timeUs: Long) { handler.post {
         if (!closed.get() && flow.acknowledge(timeUs, SystemClock.elapsedRealtime())) {
             updateBitrate()
-            if (waitingForKey) runCatching { codec?.setParameters(Bundle().apply {
-                putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
-            }) }
+            if (waitingForKey) requestSyncFrame()
         }
     } }
 
@@ -206,8 +214,10 @@ internal class ScreenEncoder(
 
     private fun watchdog() {
         if (closed.get()) return
-        if (flow.congested(SystemClock.elapsedRealtime())) { flow.reduce(); updateBitrate() }
-        handler.postDelayed(::watchdog, 2000)
+        val now = SystemClock.elapsedRealtime()
+        if (flow.congested(now)) { flow.reduce(now); updateBitrate() }
+        onTransport(flow.snapshot(now))
+        handler.postDelayed(::watchdog, 1000)
     }
 
     override fun close() {

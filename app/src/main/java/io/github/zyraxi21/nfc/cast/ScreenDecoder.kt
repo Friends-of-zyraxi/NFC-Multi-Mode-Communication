@@ -2,6 +2,7 @@ package io.github.zyraxi21.nfc.cast
 
 import android.content.res.Resources
 import android.media.MediaCodec
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.os.SystemClock
 import android.os.Handler
@@ -25,6 +26,7 @@ internal class ScreenDecoder(
     private val onError: (String) -> Unit,
     private val requestKey: () -> Unit,
     private val onRendered: (Long) -> Unit = {},
+    private val onCodec: (String, Boolean) -> Unit = { _, _ -> },
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val target = AtomicReference<Surface?>(null)
@@ -89,7 +91,15 @@ internal class ScreenDecoder(
         val config = format ?: error("缺少视频参数")
         if (needsKey && !frame.key) { onRendered(frame.timeUs); return }
         if (codec == null) {
-            val next = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            val selected = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+                .filter { !it.isEncoder && it.supportedTypes.any { type -> type.equals(MediaFormat.MIMETYPE_VIDEO_AVC, true) } }
+                .sortedByDescending { it.isHardwareAccelerated }
+                .firstOrNull { info -> runCatching {
+                    info.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC).videoCapabilities
+                        ?.isSizeSupported(config.width, config.height) == true
+                }.getOrDefault(false) }
+            val next = if (selected != null) MediaCodec.createByCodecName(selected.name)
+                else MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
             codec = next
             val mediaFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, config.width, config.height).apply {
                 setByteBuffer("csd-0", ByteBuffer.wrap(config.sps)); setByteBuffer("csd-1", ByteBuffer.wrap(config.pps))
@@ -97,6 +107,7 @@ internal class ScreenDecoder(
                 setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
             }
             next.configure(mediaFormat, surface, null, 0); next.start(); codecSurface = surface
+            onCodec(next.name, next.codecInfo.isHardwareAccelerated)
         }
         val decoder = requireNotNull(codec)
         needsKey = false

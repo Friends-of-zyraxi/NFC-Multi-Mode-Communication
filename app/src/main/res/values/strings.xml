@@ -499,4 +499,19 @@
     <string name="cast_preview_video">共享画面预览</string>
     <string name="cast_show_controls">显示投屏控件</string>
     <string name="cast_hide_controls">隐藏投屏控件</string>
+    <string name="cast_details_show">连接详情</string>
+    <string name="cast_details_hide">收起连接详情</string>
+    <string name="cast_link_unknown">尚未报告</string>
+    <string name="cast_link_low">低</string>
+    <string name="cast_link_medium">中</string>
+    <string name="cast_link_high">高</string>
+    <string name="cast_link_quality">连接能力：%1$s（Nearby 报告）</string>
+    <string name="cast_link_low_hint">当前连接能力较低，大画面传输可能受限。可尝试断开后重新建立连接。</string>
+    <string name="cast_transport_metrics">已确认吞吐 %1$.2f Mbit/s，反馈耗时 %2$d ms，待确认 %3$d 帧</string>
+    <string name="cast_encoder">编码器</string>
+    <string name="cast_decoder">解码器</string>
+    <string name="cast_codec_hardware">硬件</string>
+    <string name="cast_codec_software">软件</string>
+    <string name="cast_codec_details">%1$s：%2$s（%3$s）</string>
+    <string name="cast_metrics_hint">连接等级不代表具体无线方式；已确认吞吐与反馈耗时也包含接收端处理，不等于编码目标或纯网络速率。</string>
 </resources>

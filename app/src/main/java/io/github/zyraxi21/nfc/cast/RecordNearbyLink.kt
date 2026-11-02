@@ -19,6 +19,8 @@ internal object RecordNearbyLink {
     private var invitations = WeakReference<InvitationListener>(null)
     private val pending = mutableMapOf<String, RecordNearbyPeer>()
     private val earlyAuth = ArrayDeque<Payload>()
+    private val qualities = mutableMapOf<String, Int>()
+    private var castBandwidth: ((Int) -> Unit)? = null
     var peer: RecordNearbyPeer? = null
         private set
     var handoffPending = false
@@ -45,12 +47,16 @@ internal object RecordNearbyLink {
             val candidate = pending.remove(id) ?: return@post
             if (result.status.statusCode == ConnectionsStatusCodes.STATUS_OK) {
                 rememberConnected(candidate)
-            }
+            } else qualities.remove(id)
             recordsLifecycle.get()?.onConnectionResult(id, result)
         } }
         override fun onDisconnected(id: String) { main.post {
             if (peer?.endpoint == id) reset()
-            else if (pending.remove(id) != null) recordsLifecycle.get()?.onDisconnected(id)
+            else if (pending.remove(id) != null) { qualities.remove(id); recordsLifecycle.get()?.onDisconnected(id) }
+        } }
+        override fun onBandwidthChanged(id: String, info: BandwidthInfo) { main.post {
+            rememberBandwidth(id, info.quality)
+            recordsLifecycle.get()?.onBandwidthChanged(id, info)
         } }
     }
 
@@ -88,7 +94,21 @@ internal object RecordNearbyLink {
     }
 
     /** 记录当前连接身份；投屏入口接管时必须匹配同一快照。 */
-    internal fun rememberConnected(peer: RecordNearbyPeer) { this.peer = peer; earlyAuth.clear() }
+    internal fun rememberConnected(peer: RecordNearbyPeer) {
+        this.peer = peer; earlyAuth.clear(); qualities.keys.retainAll(setOf(peer.endpoint))
+    }
+
+    internal fun rememberBandwidth(endpoint: String, quality: Int) {
+        if (peer?.endpoint != endpoint && !pending.containsKey(endpoint)) return
+        qualities[endpoint] = quality
+        if (peer?.endpoint == endpoint) castBandwidth?.invoke(quality)
+    }
+
+    fun watchBandwidth(owner: Any, callback: (Int) -> Unit) {
+        if (castOwner !== owner) return
+        castBandwidth = callback
+        callback(qualities[peer?.endpoint] ?: BandwidthInfo.Quality.UNKNOWN)
+    }
 
     fun reserveForCast() { if (peer != null && castOwner == null) handoffPending = true }
     fun cancelReservation() { handoffPending = false }
@@ -107,6 +127,7 @@ internal object RecordNearbyLink {
         val previous = peer
         val disconnected = castDisconnected
         peer = null; castOwner = null; castPayloads = null; castDisconnected = null
+        castBandwidth = null; qualities.clear()
         handoffPending = false
         pending.clear(); earlyAuth.clear()
         if (previous != null) {

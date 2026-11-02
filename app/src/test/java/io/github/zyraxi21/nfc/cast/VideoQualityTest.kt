@@ -34,7 +34,7 @@ class VideoQualityTest {
         assertEquals(12_000_000, flow.bitrate)
         repeat(100) { flow.reserve(it.toLong(), 0); flow.acknowledge(it.toLong(), 10) }
         assertEquals(12_000_000, flow.bitrate)
-        repeat(100) { flow.reduce() }
+        repeat(100) { flow.reduce(it * 1000L) }
         assertEquals(1_000_000, flow.bitrate)
     }
 }

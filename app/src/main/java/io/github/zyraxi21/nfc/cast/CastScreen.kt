@@ -137,12 +137,14 @@ internal fun CastScreen(
                     if (state.videoBitrate > 0) FluentText(
                         stringResource(R.string.cast_encoding_target, state.videoBitrate / 1_000_000.0, state.videoFrameRate),
                         FluentTextStyle.Caption1, color = AppTheme.textSecondary)
+                    CastConnectionDetails(state)
                     FluentButton(onClick = onHome, text = stringResource(R.string.cast_go_home), modifier = Modifier.fillMaxWidth())
                     FluentButton(onClick = onStopVideo, text = stringResource(R.string.cast_stop_sharing), style = ButtonStyle.OutlinedButton, modifier = Modifier.fillMaxWidth())
                 }
                 CastStage.RECEIVING -> {
                     CastReceiverViewport(state, full, onSurface, onExitFullscreen = { full = false },
                         modifier = Modifier.weight(1f).fillMaxWidth())
+                    if (!full) CastConnectionDetails(state)
                     if (!full) Row(Modifier.fillMaxWidth().padding(FluentSpacing.mPlus), horizontalArrangement = Arrangement.spacedBy(FluentSpacing.m)) {
                         FluentButton(onClick = { full = true }, text = stringResource(R.string.cast_enter_fullscreen), modifier = Modifier.weight(1f))
                         FluentButton(onClick = onStopVideo, text = stringResource(R.string.cast_stop_sharing), style = ButtonStyle.OutlinedButton, modifier = Modifier.weight(1f))

@@ -38,6 +38,12 @@ data class CastUiState(
     val codeConfirmed: Boolean = false,
     val videoBitrate: Int = 0,
     val videoFrameRate: Int = 0,
+    val linkQuality: Int = BandwidthInfo.Quality.UNKNOWN,
+    val confirmedBitrate: Int = 0,
+    val feedbackMs: Long = 0,
+    val pendingFrames: Int = 0,
+    val codecName: String = "",
+    val hardwareCodec: Boolean = false,
 )
 
 /** 独立占用 Nearby 的投屏会话。所有连接及角色状态在主线程串行更新，媒体在专用线程运行。 */
@@ -47,6 +53,7 @@ class CastSessionService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutableState = MutableStateFlow(CastUiState())
+    private var linkQuality = BandwidthInfo.Quality.UNKNOWN
     val state = mutableState.asStateFlow()
     private val client by lazy { Nearby.getConnectionsClient(this) }
     private var generation = 0
@@ -87,6 +94,7 @@ class CastSessionService : Service() {
         if (!RecordNearbyLink.takeOver(this, peer, payloadCallback(ticket)) { id ->
                 main.post { if (generation == ticket && endpoint == id) end(getString(R.string.cast_peer_disconnected)) }
             }) { end(getString(R.string.cast_error_takeover)); return }
+        RecordNearbyLink.watchBandwidth(this) { quality -> if (generation == ticket) updateLinkQuality(quality) }
         try { promote(false) } catch (_: Exception) { end(getString(R.string.cast_error_start_service)); return }
         client.stopAdvertising(); client.stopDiscovery()
         val current = requireNotNull(invite)
@@ -143,6 +151,9 @@ class CastSessionService : Service() {
     }
 
     private fun lifecycleCallback(ticket: Int, payloads: PayloadCallback) = object : ConnectionLifecycleCallback() {
+        override fun onBandwidthChanged(id: String, info: BandwidthInfo) { main.post {
+            if (ticket == generation && endpoint == id) updateLinkQuality(info.quality)
+        } }
         override fun onConnectionInitiated(id: String, info: ConnectionInfo) { main.post {
             if (ticket != generation) return@post
             val current = invite
@@ -180,7 +191,7 @@ class CastSessionService : Service() {
         }
         timeout?.cancel(); roleTimeout?.cancel(); clearInvite()
         client.stopAdvertising(); client.stopDiscovery()
-        mutableState.value = CastUiState(CastStage.READY)
+        mutableState.value = CastUiState(CastStage.READY, linkQuality = linkQuality)
     }
 
     private fun payloadCallback(ticket: Int) = object : PayloadCallback() {
@@ -203,6 +214,9 @@ class CastSessionService : Service() {
                             onError = { message -> main.post { if (proposal == streamId) stopVideo(message) } },
                             requestKey = { main.post { if (proposal == streamId) send(CastControl("key", streamId)) } },
                             onRendered = { pts -> main.post { if (proposal == streamId) send(CastControl("ack", streamId, pts.toString())) } },
+                            onCodec = { name, hardware -> main.post {
+                                if (proposal == streamId) mutableState.value = state.value.copy(codecName = name, hardwareCodec = hardware)
+                            } },
                         ).also { it.attach(targetSurface); it.start() }
                     }
                     else -> client.cancelPayload(payload.id)
@@ -235,7 +249,7 @@ class CastSessionService : Service() {
                 if (state.value.stage == CastStage.OFFER_OUT && host) return
                 if (state.value.stage !in listOf(CastStage.READY, CastStage.OFFER_OUT)) return
                 roleTimeout?.cancel(); proposal = message.id
-                mutableState.value = CastUiState(CastStage.OFFER_IN, localSender = (message.value == "host") == host)
+                mutableState.value = CastUiState(CastStage.OFFER_IN, localSender = (message.value == "host") == host, linkQuality = linkQuality)
                 armRoleTimeout(message.id)
             }
             "accept" -> if (proposal == message.id && state.value.stage == CastStage.OFFER_OUT) {
@@ -260,14 +274,14 @@ class CastSessionService : Service() {
     private fun finishVerification() {
         if (localVerified && remoteVerified && state.value.stage == CastStage.VERIFYING) {
             timeout?.cancel()
-            mutableState.value = CastUiState(CastStage.READY)
+            mutableState.value = CastUiState(CastStage.READY, linkQuality = linkQuality)
         }
     }
 
     fun requestDirection(localSender: Boolean) {
         if (state.value.stage != CastStage.READY) return
         val id = UUID.randomUUID().toString(); proposal = id
-        mutableState.value = CastUiState(CastStage.OFFER_OUT, localSender = localSender)
+        mutableState.value = CastUiState(CastStage.OFFER_OUT, localSender = localSender, linkQuality = linkQuality)
         val senderHost = if (localSender) host else !host
         send(CastControl("role", id, if (senderHost) "host" else "guest"))
         armRoleTimeout(id)
@@ -305,6 +319,13 @@ class CastSessionService : Service() {
                 onSize = { w, h -> main.post { if (proposal == id) mutableState.value = state.value.copy(width = w, height = h) } },
                 onError = { message -> main.post { if (proposal == id) stopVideo(message) } },
                 onQuality = { bitrate, fps -> main.post { if (proposal == id) mutableState.value = state.value.copy(videoBitrate = bitrate, videoFrameRate = fps) } },
+                onTransport = { stats -> main.post {
+                    if (proposal == id) mutableState.value = state.value.copy(confirmedBitrate = stats.confirmedBitrate,
+                        feedbackMs = stats.feedbackMs, pendingFrames = stats.pendingFrames)
+                } },
+                onCodec = { name, hardware -> main.post {
+                    if (proposal == id) mutableState.value = state.value.copy(codecName = name, hardwareCodec = hardware)
+                } },
             )
             mutableState.value = state.value.copy(stage = CastStage.SENDING)
             roleTimeout?.cancel()
@@ -332,12 +353,17 @@ class CastSessionService : Service() {
         runCatching { streamReadPipe?.close() }; streamReadPipe = null
         if (peerProven && transportConnected) {
             mutableState.value = if (directConnection && (!localVerified || !remoteVerified)) state.value.copy(message = message)
-                else CastUiState(CastStage.READY, message)
+                else CastUiState(CastStage.READY, message, linkQuality = linkQuality)
             runCatching { promote(false) }
         }
     }
 
     fun notice(message: String) { mutableState.value = state.value.copy(message = message) }
+
+    private fun updateLinkQuality(quality: Int) {
+        linkQuality = quality
+        mutableState.value = state.value.copy(linkQuality = quality)
+    }
 
     private fun send(message: CastControl) {
         val id = endpoint ?: return
@@ -362,6 +388,7 @@ class CastSessionService : Service() {
         ownsNearby = false
         if (foreground) stopForeground(STOP_FOREGROUND_REMOVE)
         foreground = false
+        linkQuality = BandwidthInfo.Quality.UNKNOWN
         mutableState.value = CastUiState(message = message)
         stopSelf()
     }
